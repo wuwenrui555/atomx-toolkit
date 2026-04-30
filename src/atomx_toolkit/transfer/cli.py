@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
 
@@ -10,6 +11,15 @@ import typer
 from rich.console import Console
 
 from atomx_toolkit.config import ConfigError, load_config
+from atomx_toolkit.notify.dispatch import (
+    dispatch_batch_report,
+    dispatch_transfer_report,
+)
+from atomx_toolkit.notify.events import (
+    BatchItem,
+    BatchReport,
+    TransferReport,
+)
 from atomx_toolkit.transfer.batch import (
     BatchPlan,
     BatchRunResult,
@@ -38,6 +48,10 @@ def _default_sftp_env_path() -> Path:
     return Path.home() / ".config" / "atomx-toolkit" / "sftp.env"
 
 
+def _default_smtp_env_path() -> Path:
+    return Path.home() / ".config" / "atomx-toolkit" / "smtp.env"
+
+
 @app.command("run")
 def run_cmd(
     name_remote: Annotated[str, typer.Argument(help="Remote study directory name")],
@@ -46,6 +60,7 @@ def run_cmd(
 ) -> None:
     """Download a single study, with double-MD5 verification."""
     cfg_path = config or _default_config_path()
+    smtp_env_path = _default_smtp_env_path()
     try:
         cfg = load_config(cfg_path)
     except ConfigError as exc:
@@ -56,6 +71,8 @@ def run_cmd(
     except SftpCredentialsError as exc:
         console.print(f"[red]credential error:[/red] {exc}")
         raise typer.Exit(code=2) from exc
+    started = datetime.now(UTC)
+    log_path = cfg.paths.log_root / name_local / f"{name_local}.log"
     try:
         result = run_pipeline(
             host=cfg.sftp.hostname,
@@ -75,12 +92,43 @@ def run_cmd(
         )
         raise typer.Exit(code=2) from exc
     except TransferError as exc:
+        completed = datetime.now(UTC)
+        report = TransferReport(
+            name_remote=name_remote,
+            name_local=name_local,
+            status="failed",
+            started_at=started,
+            completed_at=completed,
+            file_count=None,
+            total_bytes=None,
+            failure_phase=type(exc).__name__,
+            failure_message=str(exc),
+            log_path=log_path,
+        )
+        dispatch_transfer_report(
+            report, cfg=cfg, config_path=cfg_path, smtp_env=smtp_env_path
+        )
         console.print(f"[red]transfer failed:[/red] {exc}")
         raise typer.Exit(code=1) from exc
     if result.status == "skipped_already_complete":
         console.print(f"[yellow]already complete:[/yellow] {name_local}")
-    else:
-        console.print(f"[green]ok:[/green] {name_local} ({result.file_count} files)")
+        return
+    report = TransferReport(
+        name_remote=name_remote,
+        name_local=name_local,
+        status="success",
+        started_at=result.started_at,
+        completed_at=result.completed_at,
+        file_count=result.file_count,
+        total_bytes=result.total_bytes,
+        failure_phase=None,
+        failure_message=None,
+        log_path=log_path,
+    )
+    dispatch_transfer_report(
+        report, cfg=cfg, config_path=cfg_path, smtp_env=smtp_env_path
+    )
+    console.print(f"[green]ok:[/green] {name_local} ({result.file_count} files)")
 
 
 @app.command("batch")
@@ -90,6 +138,7 @@ def batch_cmd(
 ) -> None:
     """Run a batch of studies sequentially from a 2-column TSV."""
     cfg_path = config or _default_config_path()
+    smtp_env_path = _default_smtp_env_path()
     try:
         cfg = load_config(cfg_path)
         creds = load_sftp_credentials(_default_sftp_env_path())
@@ -111,6 +160,25 @@ def batch_cmd(
         jobs_tsv_path=jobs_tsv,
     )
     _render_batch_summary(result)
+    items = [
+        BatchItem(
+            name_remote=i.name_remote,
+            name_local=i.name_local,
+            status=i.status,
+            duration=i.duration,
+            failure_message=i.failure_message,
+        )
+        for i in result.items
+    ]
+    batch_report = BatchReport(
+        jobs_tsv=jobs_tsv,
+        started_at=result.started_at,
+        completed_at=result.completed_at,
+        items=items,
+    )
+    dispatch_batch_report(
+        batch_report, cfg=cfg, config_path=cfg_path, smtp_env=smtp_env_path
+    )
     if result.any_failed or result.all_skipped_locked:
         raise typer.Exit(code=1)
 
