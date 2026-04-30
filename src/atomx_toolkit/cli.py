@@ -3,6 +3,7 @@
 import typer
 
 from atomx_toolkit import __version__
+from atomx_toolkit.install.cli import app as install_app
 from atomx_toolkit.notify.cli import app as notify_app
 from atomx_toolkit.transfer.cli import app as transfer_app
 
@@ -13,6 +14,7 @@ app = typer.Typer(
 )
 app.add_typer(transfer_app, name="transfer")
 app.add_typer(notify_app, name="notify")
+app.add_typer(install_app, name="install")
 
 
 def _version_callback(value: bool) -> None:
