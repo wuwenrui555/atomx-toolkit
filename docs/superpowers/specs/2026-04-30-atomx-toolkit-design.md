@@ -107,14 +107,23 @@ Boundaries:
 ### 4.1 Pipeline (per study)
 
 ```
-acquire study lock <local_backup_root>/<name_local>/.atomx-toolkit.lock
+Phase 0  mkdir -p
+   - <log_root>/<name_local>/{index,path,md5sum}
+   - <backup_root>/<name_local>/{AtoMx,AtoMx_copy}
+   ↓
+acquire study lock <backup_root>/<name_local>/.atomx-toolkit.lock
+   (atomic: os.open with O_CREAT | O_EXCL | O_WRONLY)
    ↓
 Phase 1  list remote files (×2)
    - sftp.walk_files(remote_dir) → remote_fs_1
    - sftp.walk_files(remote_dir) → remote_fs_2
    - assert set(remote_fs_1) == set(remote_fs_2)
    - on mismatch: write index/path_fail, raise RemoteListInconsistent
+   - if both empty: log WARNING (study has no files; the toolkit_error
+     handler will surface this as an email — silent zero-file
+     success is a known foot-gun for typo'd remote names)
    - on match:    write index/path_pass + path/path_1.txt + path/path_2.txt
+                  (one absolute remote POSIX path per line, UTF-8, LF)
    ↓
 Phase 2  download → AtoMx/   (resume-aware, atomic per-file)
    ↓
@@ -154,10 +163,16 @@ because the temp `.part` lives in the same directory as the final.
 ### 4.3 Study-level lock
 
 - File: `<backup_root>/<name_local>/.atomx-toolkit.lock`
-- Created: just before Phase 1.
+- Created: just after Phase 0 (mkdir), before Phase 1.
+- **Acquisition:** `os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)`.
+  Atomically creates the lock or fails with `FileExistsError` if it
+  already exists. No TOCTOU between "check exists" and "create".
+  After the fd is opened, write the JSON content and close.
 - Removed: in `finally` of the per-study `try/except`, success or
-  failure.
-- Content (JSON, written atomically via temp + rename):
+  failure. Removal is best-effort: if the lock file vanished on us
+  somehow (operator manually deleted, filesystem unmount), log
+  WARNING but don't raise.
+- Content (JSON, written via the `os.open` fd):
   ```json
   {
     "hostname": "binks",
@@ -166,10 +181,13 @@ because the temp `.part` lives in the same directory as the final.
     "name_remote": "HCC_TMA006_..._116"
   }
   ```
-- **Crash detection on entry:** if the lock already exists,
-  `transfer run` exits 2 with a message printing the lock contents
-  and instructing the operator to inspect the partial state and
-  delete the lock manually.
+- **Crash detection on entry:** when `os.open` raises `FileExistsError`,
+  the pipeline reads the existing lock, raises `LockHeldError(content)`
+  for the caller. `transfer run` maps this to exit 2 + a message
+  printing the lock contents and instructing the operator to inspect
+  the partial state and delete the lock manually. `transfer batch`
+  catches `LockHeldError` per item and marks it `skipped_locked`,
+  continuing to the next item.
 - **No PID liveness check.** Auto-judging "is the PID still alive"
   is unreliable across reboots, containers, and cross-host
   deployments. The conservative default forces a human to verify
@@ -185,11 +203,18 @@ because the temp `.part` lives in the same directory as the final.
     file-level resume.
 - **Batch-level** (`transfer batch`):
   - Pre-scan `jobs.tsv`, classify each row:
-    - `complete_already` if `index/md5sum_pass` exists
-    - `skipped_locked` if `.atomx-toolkit.lock` exists
+    - `complete_already` if `<log_root>/<name_local>/index/md5sum_pass` exists
+    - `skipped_locked` if `<backup_root>/<name_local>/.atomx-toolkit.lock` exists
     - `pending` otherwise
   - Iterate `pending` sequentially. Each study runs in its own
-    `try/except`. On exception, append to `failed`, continue to next.
+    `try/except`. On exception:
+    - `LockHeldError` → mark `skipped_locked` (covers the race where
+      another process grabbed the lock between pre-scan and pipeline
+      entry), continue.
+    - Any other exception → mark `failed`, append failure message,
+      continue.
+  - **Pre-scan reads two roots** (`<log_root>` and `<backup_root>`)
+    so config must be loaded before pre-scan.
 
 ### 4.5 SFTP layer
 
@@ -293,12 +318,19 @@ Exit 0 always (informational). No email sent.
 │   ├── md5sum_pass          # phase 6 passed; CONTENTS = ISO 8601 timestamp
 │   └── md5sum_fail          # phase 6 failed (empty file)
 ├── path/
-│   ├── path_1.txt
-│   └── path_2.txt
+│   ├── path_1.txt           # one absolute remote POSIX path per line, UTF-8, LF
+│   └── path_2.txt           # same format
 └── md5sum/
-    ├── md5sum_1.txt
+    ├── md5sum_1.txt         # `md5sum` standard format: <hash><SP><SP><relpath>\n
     ├── md5sum_2.txt
-    └── md5sum_diff.csv      # phase 6 failure only
+    └── md5sum_diff.csv      # phase 6 failure only; cols (file, md5_1, md5_2, status)
+```
+
+```
+<backup_root>/<name_local>/
+├── .atomx-toolkit.lock      # JSON, present only while pipeline is running
+├── AtoMx/                   # primary backup, persists after success
+└── AtoMx_copy/              # secondary backup, removed after phase 6 passes
 ```
 
 The presence of `md5sum_pass` is the authoritative "study is done"
@@ -485,6 +517,24 @@ Recipients are operator-curated state and must never be clobbered.
 Non-fatal if either fails; `init` still writes templates but prints
 a warning summary so the operator sees what to fix.
 
+**State directory.** `install init` also creates
+`<config_dir>/state/` (used at runtime for
+`toolkit_error_dedup.json`) but does not pre-populate any state
+files — runtime code creates them lazily.
+
+**Recipient templates.** Each `recipients/*.txt` file is created
+with a 4-line header explaining the format, e.g.:
+
+```text
+# Subscribers for transfer_report. One email per line.
+# Blank lines and lines starting with '#' are ignored.
+# Edit at runtime; changes take effect on the next email send.
+
+```
+
+This makes the format self-documenting and avoids "is this file
+really supposed to be empty?" confusion.
+
 ## 7. Configuration
 
 ### 7.1 `config.toml`
@@ -577,24 +627,35 @@ locks manually.
   with `status="failed"`, dispatches `transfer_report`, exits with
   the appropriate code.
 - `transfer batch` does the same per-item; the batch wrapper itself
-  also dispatches `batch_report` after all items finish (or after
-  KeyboardInterrupt — partial batch reports are still valuable).
+  also dispatches `batch_report` after all items finish.
 - A `logging.Handler` subclass attached to the root logger watches
   for WARNING+ records and dispatches `toolkit_error` (with cooldown
   / dedup). This catches issues outside the per-study `try/except`
   scope (e.g., config load errors, SMTP auth failures).
-- KeyboardInterrupt: the lock is released in `finally`, the partial
-  state on disk is left for resume, exit code 1.
+- **KeyboardInterrupt semantics:**
+  - In `transfer run`: lock released in `finally`, partial files
+    left for resume, `transfer_report` dispatched with
+    `failure_phase="interrupted"`, exit 1.
+  - In `transfer batch`: **abort the entire batch** (do not
+    continue to remaining items — operator hit Ctrl-C means "stop
+    everything"). The currently-running item is marked `failed`
+    with `failure_message="interrupted"`; remaining `pending`
+    items are appended as `failed` with `failure_message="not run, batch aborted"`.
+    Partial `batch_report` is dispatched. Exit 1.
 
 ## 11. Logging
 
 - Per-study log: `<log_root>/<name_local>/<name_local>.log` (mode
   `"a"` — append, so re-runs accumulate history).
 - Batch log: `<log_root>/_batch/batch_<UTC-ISO-compact>.log` (one
-  file per batch invocation).
-- Format: `%(asctime)s %(levelname)s %(name)s — %(message)s`.
+  file per batch invocation, e.g.
+  `batch_20260430T123456Z.log`).
+- Format: `%(asctime)s %(levelname)s %(name)s | %(message)s`.
 - Console handler: WARNING by default, INFO with `-v`, DEBUG with `-vv`.
 - File handler: always INFO.
+- **Third-party noise:** `paramiko` logs at INFO are very chatty
+  (channel open/close, packet metadata). At setup time, the
+  toolkit explicitly sets `logging.getLogger("paramiko").setLevel(logging.WARNING)`.
 
 ## 12. Testing strategy
 
