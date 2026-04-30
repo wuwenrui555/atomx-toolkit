@@ -5,11 +5,12 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any, cast
 
 import typer
 from rich.console import Console
 
+from atomx_toolkit._logging import batch_log_path, setup_logging
 from atomx_toolkit.config import ConfigError, load_config
 from atomx_toolkit.notify.dispatch import (
     dispatch_batch_report,
@@ -33,6 +34,7 @@ from atomx_toolkit.transfer.credentials import (
     load_sftp_credentials,
 )
 from atomx_toolkit.transfer.errors import LockHeldError, TransferError
+from atomx_toolkit.transfer.md5 import assert_md5sum_available
 from atomx_toolkit.transfer.pipeline import run_pipeline
 
 app = typer.Typer(name="transfer", no_args_is_help=True, help="SFTP transfer commands.")
@@ -52,8 +54,17 @@ def _default_smtp_env_path() -> Path:
     return Path.home() / ".config" / "atomx-toolkit" / "smtp.env"
 
 
+def _verbose(ctx: typer.Context) -> int:
+    obj = ctx.obj
+    if not isinstance(obj, dict):
+        return 0
+    value = cast(dict[str, Any], obj).get("verbose", 0)
+    return int(value) if isinstance(value, int) else 0
+
+
 @app.command("run")
 def run_cmd(
+    ctx: typer.Context,
     name_remote: Annotated[str, typer.Argument(help="Remote study directory name")],
     name_local: Annotated[str, typer.Argument(help="Local destination directory name")],
     config: Annotated[Path | None, typer.Option("--config", help="config.toml path")] = None,
@@ -71,8 +82,16 @@ def run_cmd(
     except SftpCredentialsError as exc:
         console.print(f"[red]credential error:[/red] {exc}")
         raise typer.Exit(code=2) from exc
-    started = datetime.now(UTC)
+    try:
+        assert_md5sum_available()
+    except FileNotFoundError as exc:
+        console.print(f"[red]config error:[/red] {exc}")
+        raise typer.Exit(code=2) from exc
+
     log_path = cfg.paths.log_root / name_local / f"{name_local}.log"
+    setup_logging(log_path, verbose=_verbose(ctx))
+
+    started = datetime.now(UTC)
     try:
         result = run_pipeline(
             host=cfg.sftp.hostname,
@@ -108,6 +127,43 @@ def run_cmd(
         dispatch_transfer_report(report, cfg=cfg, config_path=cfg_path, smtp_env=smtp_env_path)
         console.print(f"[red]transfer failed:[/red] {exc}")
         raise typer.Exit(code=1) from exc
+    except KeyboardInterrupt:
+        completed = datetime.now(UTC)
+        logger.warning("transfer interrupted by user")
+        report = TransferReport(
+            name_remote=name_remote,
+            name_local=name_local,
+            status="failed",
+            started_at=started,
+            completed_at=completed,
+            file_count=None,
+            total_bytes=None,
+            failure_phase="interrupted",
+            failure_message="KeyboardInterrupt",
+            log_path=log_path,
+        )
+        dispatch_transfer_report(report, cfg=cfg, config_path=cfg_path, smtp_env=smtp_env_path)
+        console.print("[yellow]interrupted[/yellow]")
+        raise typer.Exit(code=1) from None
+    except Exception as exc:
+        completed = datetime.now(UTC)
+        logger.exception("unexpected runtime error in transfer run")
+        report = TransferReport(
+            name_remote=name_remote,
+            name_local=name_local,
+            status="failed",
+            started_at=started,
+            completed_at=completed,
+            file_count=None,
+            total_bytes=None,
+            failure_phase="runtime_error",
+            failure_message=f"{type(exc).__name__}: {exc}",
+            log_path=log_path,
+        )
+        dispatch_transfer_report(report, cfg=cfg, config_path=cfg_path, smtp_env=smtp_env_path)
+        console.print(f"[red]unexpected error:[/red] {exc}")
+        raise typer.Exit(code=3) from exc
+
     if result.status == "skipped_already_complete":
         console.print(f"[yellow]already complete:[/yellow] {name_local}")
         return
@@ -129,6 +185,7 @@ def run_cmd(
 
 @app.command("batch")
 def batch_cmd(
+    ctx: typer.Context,
     jobs_tsv: Annotated[Path, typer.Argument(help="jobs.tsv path")],
     config: Annotated[Path | None, typer.Option("--config", help="config.toml path")] = None,
 ) -> None:
@@ -142,19 +199,38 @@ def batch_cmd(
     except (ConfigError, SftpCredentialsError, JobsTsvError) as exc:
         console.print(f"[red]error:[/red] {exc}")
         raise typer.Exit(code=2) from exc
+    try:
+        assert_md5sum_available()
+    except FileNotFoundError as exc:
+        console.print(f"[red]config error:[/red] {exc}")
+        raise typer.Exit(code=2) from exc
+
+    log_path = batch_log_path(cfg.paths.log_root)
+    setup_logging(log_path, verbose=_verbose(ctx))
+
     plan = classify_jobs(jobs, log_root=cfg.paths.log_root, backup_root=cfg.paths.backup_root)
-    result = run_batch(
-        jobs=jobs,
-        plan=plan,
-        host=cfg.sftp.hostname,
-        port=22,
-        user=creds.user,
-        password=creds.password,
-        remote_root=cfg.sftp.remote_root,
-        log_root=cfg.paths.log_root,
-        backup_root=cfg.paths.backup_root,
-        jobs_tsv_path=jobs_tsv,
-    )
+    try:
+        result = run_batch(
+            jobs=jobs,
+            plan=plan,
+            host=cfg.sftp.hostname,
+            port=22,
+            user=creds.user,
+            password=creds.password,
+            remote_root=cfg.sftp.remote_root,
+            log_root=cfg.paths.log_root,
+            backup_root=cfg.paths.backup_root,
+            jobs_tsv_path=jobs_tsv,
+        )
+    except KeyboardInterrupt:
+        logger.warning("batch interrupted by user before run_batch returned")
+        console.print("[yellow]interrupted[/yellow]")
+        raise typer.Exit(code=1) from None
+    except Exception as exc:
+        logger.exception("unexpected runtime error in transfer batch")
+        console.print(f"[red]unexpected error:[/red] {exc}")
+        raise typer.Exit(code=3) from exc
+
     _render_batch_summary(result)
     items = [
         BatchItem(
