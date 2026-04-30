@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - name: install python
+        run: uv python install 3.12
+      - name: sync dependencies
+        run: uv sync --all-extras --dev
+      - name: ruff check
+        run: uv run ruff check src/ tests/
+      - name: ruff format check
+        run: uv run ruff format --check src/ tests/
+      - name: pyright
+        run: uv run pyright src/ tests/
+      - name: pytest
+        run: uv run pytest --cov=atomx_toolkit --cov-report=term
