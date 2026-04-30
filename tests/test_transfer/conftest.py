@@ -101,9 +101,7 @@ def _serve_one(
         transport = paramiko.Transport(client_sock)
         transport.add_server_key(host_key)
         _SftpHandler.ROOT = rootdir  # set per-connection root
-        transport.set_subsystem_handler(
-            "sftp", paramiko.SFTPServer, _SftpHandler
-        )
+        transport.set_subsystem_handler("sftp", paramiko.SFTPServer, _SftpHandler)
         try:
             transport.start_server(server=_AuthHandler(user, password))
         except paramiko.SSHException:
@@ -155,9 +153,7 @@ def seed_remote(server: SftpServerFixture, files: dict[str, bytes]) -> None:
 
 
 @pytest.fixture
-def known_hosts_isolated(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> Path:
+def known_hosts_isolated(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Redirect ~/.ssh/known_hosts to a tmp path so tests don't pollute the user's."""
     ssh_dir = tmp_path / "ssh"
     ssh_dir.mkdir()

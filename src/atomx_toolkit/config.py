@@ -69,9 +69,7 @@ def load_config(path: Path) -> Config:
             f"{path}: [notify].recipients_dir must be a string, got "
             f"{type(recipients_dir_str).__name__}: {recipients_dir_str!r}"
         )
-    recipients_dir = (
-        Path(recipients_dir_str) if recipients_dir_str else path.parent / "recipients"
-    )
+    recipients_dir = Path(recipients_dir_str) if recipients_dir_str else path.parent / "recipients"
     notify_cfg = NotifyConfig(
         enabled=_bool_or_default(notify_section, "enabled", True, "[notify].enabled", path),
         toolkit_error_cooldown_seconds=_int_or_default(
@@ -117,13 +115,10 @@ def _bool_or_default(
     return value
 
 
-def _int_or_default(
-    section: dict[str, Any], key: str, default: int, label: str, path: Path
-) -> int:
+def _int_or_default(section: dict[str, Any], key: str, default: int, label: str, path: Path) -> int:
     value = section.get(key, default)
     if not isinstance(value, int) or isinstance(value, bool):
         raise ConfigError(
-            f"{path}: {label} must be a TOML integer, got "
-            f"{type(value).__name__}: {value!r}"
+            f"{path}: {label} must be a TOML integer, got {type(value).__name__}: {value!r}"
         )
     return value

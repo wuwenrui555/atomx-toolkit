@@ -105,9 +105,7 @@ def run_cmd(
             failure_message=str(exc),
             log_path=log_path,
         )
-        dispatch_transfer_report(
-            report, cfg=cfg, config_path=cfg_path, smtp_env=smtp_env_path
-        )
+        dispatch_transfer_report(report, cfg=cfg, config_path=cfg_path, smtp_env=smtp_env_path)
         console.print(f"[red]transfer failed:[/red] {exc}")
         raise typer.Exit(code=1) from exc
     if result.status == "skipped_already_complete":
@@ -125,9 +123,7 @@ def run_cmd(
         failure_message=None,
         log_path=log_path,
     )
-    dispatch_transfer_report(
-        report, cfg=cfg, config_path=cfg_path, smtp_env=smtp_env_path
-    )
+    dispatch_transfer_report(report, cfg=cfg, config_path=cfg_path, smtp_env=smtp_env_path)
     console.print(f"[green]ok:[/green] {name_local} ({result.file_count} files)")
 
 
@@ -176,9 +172,7 @@ def batch_cmd(
         completed_at=result.completed_at,
         items=items,
     )
-    dispatch_batch_report(
-        batch_report, cfg=cfg, config_path=cfg_path, smtp_env=smtp_env_path
-    )
+    dispatch_batch_report(batch_report, cfg=cfg, config_path=cfg_path, smtp_env=smtp_env_path)
     if result.any_failed or result.all_skipped_locked:
         raise typer.Exit(code=1)
 

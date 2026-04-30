@@ -180,9 +180,7 @@ def _download_all(
     local_dir: Path,
 ) -> None:
     """Download each remote file to local_dir, with size-match resume."""
-    remote_dir_with_slash = (
-        remote_dir if remote_dir.endswith("/") else remote_dir + "/"
-    )
+    remote_dir_with_slash = remote_dir if remote_dir.endswith("/") else remote_dir + "/"
     for remote in remote_files:
         if not remote.startswith(remote_dir_with_slash):
             # remote_dir itself is a file? skip

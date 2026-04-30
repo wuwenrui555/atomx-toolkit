@@ -77,9 +77,7 @@ def parse_jobs_tsv(path: Path) -> list[Job]:
             )
         remote, local = fields[0], fields[1]
         if local in seen_locals:
-            raise JobsTsvError(
-                f"{path} line {lineno}: duplicate name_local {local!r}"
-            )
+            raise JobsTsvError(f"{path} line {lineno}: duplicate name_local {local!r}")
         seen_locals.add(local)
         jobs.append((remote, local))
     if not jobs:
@@ -105,9 +103,7 @@ def classify_jobs(
             locked.append(job)
         else:
             pending.append(job)
-    return BatchPlan(
-        complete_already=complete, skipped_locked=locked, pending=pending
-    )
+    return BatchPlan(complete_already=complete, skipped_locked=locked, pending=pending)
 
 
 def run_batch(
@@ -133,9 +129,7 @@ def run_batch(
     items: list[BatchItemResult] = []
     for job in plan.complete_already:
         items.append(
-            BatchItemResult(
-                name_remote=job[0], name_local=job[1], status="complete_already"
-            )
+            BatchItemResult(name_remote=job[0], name_local=job[1], status="complete_already")
         )
     for job in plan.skipped_locked:
         items.append(
@@ -175,9 +169,7 @@ def run_batch(
                 BatchItemResult(
                     name_remote=job[0],
                     name_local=job[1],
-                    status="succeeded"
-                    if result.status == "success"
-                    else "complete_already",
+                    status="succeeded" if result.status == "success" else "complete_already",
                     duration=datetime.now(UTC) - item_start,
                 )
             )

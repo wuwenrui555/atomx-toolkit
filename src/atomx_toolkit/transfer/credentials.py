@@ -33,9 +33,7 @@ def load_sftp_credentials(dotenv_path: Path) -> SftpCredentials:
         return SftpCredentials(user=env_user, password=env_pass)
     if env_user or env_pass:
         missing = _PASS_KEY if env_user else _USER_KEY
-        raise SftpCredentialsError(
-            f"{missing} present in env but its counterpart is missing"
-        )
+        raise SftpCredentialsError(f"{missing} present in env but its counterpart is missing")
 
     if not dotenv_path.exists():
         raise SftpCredentialsError(

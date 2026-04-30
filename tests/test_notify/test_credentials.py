@@ -22,9 +22,7 @@ def test_env_takes_precedence(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     assert creds.port == 587
 
 
-def test_dotenv_used_when_env_missing(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_dotenv_used_when_env_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("ATOMX_SMTP_USER", raising=False)
     monkeypatch.delenv("ATOMX_SMTP_APP_PASSWORD", raising=False)
     p = tmp_path / "smtp.env"
@@ -40,18 +38,14 @@ def test_dotenv_used_when_env_missing(
     )
 
 
-def test_returns_missing_when_neither(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_returns_missing_when_neither(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("ATOMX_SMTP_USER", raising=False)
     monkeypatch.delenv("ATOMX_SMTP_APP_PASSWORD", raising=False)
     result = load_smtp_credentials(tmp_path / "absent.env")
     assert isinstance(result, SmtpCredentialsMissing)
 
 
-def test_partial_dotenv_returns_missing(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_partial_dotenv_returns_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("ATOMX_SMTP_USER", raising=False)
     monkeypatch.delenv("ATOMX_SMTP_APP_PASSWORD", raising=False)
     p = tmp_path / "smtp.env"

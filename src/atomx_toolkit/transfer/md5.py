@@ -27,9 +27,7 @@ class Md5Comparison:
 def assert_md5sum_available() -> None:
     """Raise FileNotFoundError if the `md5sum` binary is not on PATH."""
     if shutil.which("md5sum") is None:
-        raise FileNotFoundError(
-            "the `md5sum` binary is required (install GNU coreutils)"
-        )
+        raise FileNotFoundError("the `md5sum` binary is required (install GNU coreutils)")
 
 
 def compute_md5_tree(root: Path) -> dict[str, str]:
@@ -92,9 +90,7 @@ def read_md5_file(path: Path) -> dict[str, str]:
     return result
 
 
-def compare_md5_files(
-    md5_path_1: Path, md5_path_2: Path, diff_csv: Path
-) -> Md5Comparison:
+def compare_md5_files(md5_path_1: Path, md5_path_2: Path, diff_csv: Path) -> Md5Comparison:
     """Compare two md5sum-format files. Write a diff CSV iff anything mismatches.
 
     The CSV has columns (file, md5_1, md5_2, status) where status is one of
@@ -113,27 +109,19 @@ def compare_md5_files(
         h2 = d2.get(key)
         if h1 is None:
             missing_in_1 += 1
-            rows.append(
-                {"file": key, "md5_1": "", "md5_2": h2 or "", "status": "missing_in_1"}
-            )
+            rows.append({"file": key, "md5_1": "", "md5_2": h2 or "", "status": "missing_in_1"})
         elif h2 is None:
             missing_in_2 += 1
-            rows.append(
-                {"file": key, "md5_1": h1, "md5_2": "", "status": "missing_in_2"}
-            )
+            rows.append({"file": key, "md5_1": h1, "md5_2": "", "status": "missing_in_2"})
         elif h1 == h2:
             matched += 1
         else:
             mismatched += 1
-            rows.append(
-                {"file": key, "md5_1": h1, "md5_2": h2, "status": "mismatch"}
-            )
+            rows.append({"file": key, "md5_1": h1, "md5_2": h2, "status": "mismatch"})
     if rows:
         diff_csv.parent.mkdir(parents=True, exist_ok=True)
         with diff_csv.open("w", encoding="utf-8", newline="") as f:
-            writer = csv.DictWriter(
-                f, fieldnames=["file", "md5_1", "md5_2", "status"]
-            )
+            writer = csv.DictWriter(f, fieldnames=["file", "md5_1", "md5_2", "status"])
             writer.writeheader()
             writer.writerows(rows)
     return Md5Comparison(

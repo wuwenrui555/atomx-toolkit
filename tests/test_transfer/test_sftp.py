@@ -63,9 +63,7 @@ def test_stat_size(sftp_server: SftpServerFixture, known_hosts_isolated: Path) -
         assert client.stat_size("/big.bin") == 12345
 
 
-def test_auth_failure_raises(
-    sftp_server: SftpServerFixture, known_hosts_isolated: Path
-) -> None:
+def test_auth_failure_raises(sftp_server: SftpServerFixture, known_hosts_isolated: Path) -> None:
     with (
         pytest.raises(paramiko.AuthenticationException),
         SftpClient(

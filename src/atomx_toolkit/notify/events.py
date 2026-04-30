@@ -8,9 +8,7 @@ from pathlib import Path
 from typing import Literal
 
 TransferStatus = Literal["success", "failed"]
-BatchItemStatus = Literal[
-    "complete_already", "skipped_locked", "succeeded", "failed"
-]
+BatchItemStatus = Literal["complete_already", "skipped_locked", "succeeded", "failed"]
 
 
 @dataclass(frozen=True)
@@ -79,8 +77,7 @@ def format_batch_report(r: BatchReport) -> tuple[str, str]:
     locked = sum(1 for i in r.items if i.status == "skipped_locked")
     failed = sum(1 for i in r.items if i.status == "failed")
     subject = (
-        f"[atomx-toolkit] batch: {succeeded} ok, {failed} fail, "
-        f"{complete} already, {locked} locked"
+        f"[atomx-toolkit] batch: {succeeded} ok, {failed} fail, {complete} already, {locked} locked"
     )
     rows: list[str] = [
         f"jobs.tsv  : {r.jobs_tsv}",

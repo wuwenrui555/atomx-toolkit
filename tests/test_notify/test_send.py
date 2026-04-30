@@ -39,9 +39,7 @@ def test_send_email_delivers(tmp_path: Path, fake_smtp: FakeSmtp) -> None:
 
 
 def test_send_email_skipped_when_no_recipients(fake_smtp: FakeSmtp) -> None:
-    creds = SmtpCredentials(
-        user="x@x.com", password="p", host=fake_smtp.host, port=fake_smtp.port
-    )
+    creds = SmtpCredentials(user="x@x.com", password="p", host=fake_smtp.host, port=fake_smtp.port)
     send_email(creds=creds, recipients=[], subject="s", body="b", use_tls=False)
     assert fake_smtp.sink.messages == []
 

@@ -240,9 +240,7 @@ def test_run_batch_continues_after_other_exception(
 ) -> None:
     jobs = [("r1", "l1"), ("r2", "l2"), ("r3", "l3")]
     plan = BatchPlan(complete_already=[], skipped_locked=[], pending=jobs)
-    fake, call_count = _make_fake_pipeline(
-        ["success", ValueError("boom"), "success"]
-    )
+    fake, call_count = _make_fake_pipeline(["success", ValueError("boom"), "success"])
     monkeypatch.setattr(batch_module, "run_pipeline", fake)
 
     result = run_batch(jobs, plan=plan, **_run_batch_args(tmp_path))  # type: ignore[arg-type]
@@ -252,9 +250,7 @@ def test_run_batch_continues_after_other_exception(
     assert result.items[1].failure_message == "boom"
 
 
-def test_run_batch_includes_pre_scan_items(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_run_batch_includes_pre_scan_items(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     log_root = tmp_path / "log"
     backup_root = tmp_path / "backup"
 

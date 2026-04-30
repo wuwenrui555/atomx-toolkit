@@ -157,9 +157,7 @@ def test_md5_mismatch_raises_integrity_error(
     original_download = sftp_module.SftpClient.download_file
     call_count = {"n": 0}
 
-    def corrupt_second(
-        self: sftp_module.SftpClient, remote: str, local: Path
-    ) -> None:
+    def corrupt_second(self: sftp_module.SftpClient, remote: str, local: Path) -> None:
         original_download(self, remote, local)
         call_count["n"] += 1
         # The second download targets AtoMx_copy/; corrupt it
