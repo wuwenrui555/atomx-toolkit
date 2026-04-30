@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import tomllib
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
@@ -26,16 +26,16 @@ class PathsConfig:
 
 @dataclass(frozen=True)
 class NotifyConfig:
+    recipients_dir: Path
     enabled: bool = True
     toolkit_error_cooldown_seconds: int = 300
-    recipients_dir: Path | None = None
 
 
 @dataclass(frozen=True)
 class Config:
     sftp: SftpConfig
     paths: PathsConfig
-    notify: NotifyConfig = field(default_factory=NotifyConfig)
+    notify: NotifyConfig
 
 
 def load_config(path: Path) -> Config:
@@ -64,12 +64,24 @@ def load_config(path: Path) -> Config:
         raise ConfigError(f"{path}: [notify] must be a table")
     notify_section = cast(dict[str, Any], notify_raw)
     recipients_dir_str = notify_section.get("recipients_dir")
+    if recipients_dir_str is not None and not isinstance(recipients_dir_str, str):
+        raise ConfigError(
+            f"{path}: [notify].recipients_dir must be a string, got "
+            f"{type(recipients_dir_str).__name__}: {recipients_dir_str!r}"
+        )
+    recipients_dir = (
+        Path(recipients_dir_str) if recipients_dir_str else path.parent / "recipients"
+    )
     notify_cfg = NotifyConfig(
-        enabled=bool(notify_section.get("enabled", True)),
-        toolkit_error_cooldown_seconds=int(
-            notify_section.get("toolkit_error_cooldown_seconds", 300)
+        enabled=_bool_or_default(notify_section, "enabled", True, "[notify].enabled", path),
+        toolkit_error_cooldown_seconds=_int_or_default(
+            notify_section,
+            "toolkit_error_cooldown_seconds",
+            300,
+            "[notify].toolkit_error_cooldown_seconds",
+            path,
         ),
-        recipients_dir=Path(recipients_dir_str) if recipients_dir_str else None,
+        recipients_dir=recipients_dir,
     )
     return Config(sftp=sftp_cfg, paths=paths_cfg, notify=notify_cfg)
 
@@ -91,3 +103,27 @@ def _require_str(section: dict[str, Any], key: str, label: str, path: Path) -> s
 def _str_or_default(section: dict[str, Any], key: str, default: str) -> str:
     value = section.get(key)
     return value if isinstance(value, str) and value else default
+
+
+def _bool_or_default(
+    section: dict[str, Any], key: str, default: bool, label: str, path: Path
+) -> bool:
+    value = section.get(key, default)
+    if not isinstance(value, bool):
+        raise ConfigError(
+            f"{path}: {label} must be a TOML boolean (true/false), got "
+            f"{type(value).__name__}: {value!r}"
+        )
+    return value
+
+
+def _int_or_default(
+    section: dict[str, Any], key: str, default: int, label: str, path: Path
+) -> int:
+    value = section.get(key, default)
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise ConfigError(
+            f"{path}: {label} must be a TOML integer, got "
+            f"{type(value).__name__}: {value!r}"
+        )
+    return value

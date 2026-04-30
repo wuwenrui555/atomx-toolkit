@@ -101,3 +101,55 @@ def test_notify_overrides(tmp_path: Path) -> None:
     assert cfg.notify.enabled is False
     assert cfg.notify.toolkit_error_cooldown_seconds == 60
     assert cfg.notify.recipients_dir == Path("/custom/recipients")
+
+
+def test_recipients_dir_defaults_to_config_dir_sibling(tmp_path: Path) -> None:
+    cfg_path = _write(
+        tmp_path / "config.toml",
+        """
+        [sftp]
+        hostname = "h"
+        remote_root = "/"
+        [paths]
+        log_root = "/x"
+        backup_root = "/y"
+        """,
+    )
+    cfg = load_config(cfg_path)
+    assert cfg.notify.recipients_dir == tmp_path / "recipients"
+
+
+def test_enabled_must_be_bool(tmp_path: Path) -> None:
+    cfg_path = _write(
+        tmp_path / "config.toml",
+        """
+        [sftp]
+        hostname = "h"
+        remote_root = "/"
+        [paths]
+        log_root = "/x"
+        backup_root = "/y"
+        [notify]
+        enabled = "false"
+        """,
+    )
+    with pytest.raises(ConfigError, match="enabled"):
+        load_config(cfg_path)
+
+
+def test_cooldown_must_be_int(tmp_path: Path) -> None:
+    cfg_path = _write(
+        tmp_path / "config.toml",
+        """
+        [sftp]
+        hostname = "h"
+        remote_root = "/"
+        [paths]
+        log_root = "/x"
+        backup_root = "/y"
+        [notify]
+        toolkit_error_cooldown_seconds = "60"
+        """,
+    )
+    with pytest.raises(ConfigError, match="toolkit_error_cooldown_seconds"):
+        load_config(cfg_path)
