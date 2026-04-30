@@ -107,6 +107,12 @@ Boundaries:
 ### 4.1 Pipeline (per study)
 
 ```
+Pipeline entry
+   ↓
+Guard: if <log_root>/<name_local>/index/md5sum_pass exists
+   → log "already complete, skipping" → return (no mkdir, no lock,
+     no phases). Idempotent re-run.
+   ↓
 Phase 0  mkdir -p
    - <log_root>/<name_local>/{index,path,md5sum}
    - <backup_root>/<name_local>/{AtoMx,AtoMx_copy}
@@ -681,12 +687,19 @@ locks manually.
 - **Real local SFTP server** via `paramiko.ServerInterface` fixture
   serving a temp directory. Tests run the full pipeline against it:
   - happy path
+  - guard: re-running an already-`md5sum_pass`'d study is a no-op
+    (no mkdir, no lock, no SFTP connect)
   - mid-Phase-2 interruption (raise inside the download loop) →
     re-run completes
   - Phase-1 list inconsistency (server returns different listings on
     consecutive `listdir_attr`)
+  - Phase-1 zero files (empty remote dir) → WARNING logged + study
+    still "succeeds" with empty md5sum_pass
   - Phase-6 md5 mismatch (corrupt one file in `AtoMx_copy/` between
     Phase 3 and Phase 4)
+  - lock race: pre-existing `.atomx-toolkit.lock` → `LockHeldError`,
+    `transfer run` exits 2; same scenario inside batch → item
+    classified `skipped_locked`, batch continues
 - **Mock SMTP** via `aiosmtpd` fixture for `notify test` end-to-end.
 
 ### 12.3 Coverage target
