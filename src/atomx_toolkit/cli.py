@@ -3,12 +3,14 @@
 import typer
 
 from atomx_toolkit import __version__
+from atomx_toolkit.transfer.cli import app as transfer_app
 
 app = typer.Typer(
     name="atomx-toolkit",
     help="AtoMx SFTP transfer with integrity check and email reporting.",
     no_args_is_help=True,
 )
+app.add_typer(transfer_app, name="transfer")
 
 
 def _version_callback(value: bool) -> None:
@@ -35,7 +37,6 @@ def main(
     ),
 ) -> None:
     """atomx-toolkit root command."""
-    # Subcommand groups will be mounted in later tasks.
     _ = verbose
 
 

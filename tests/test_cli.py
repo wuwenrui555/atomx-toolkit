@@ -23,3 +23,18 @@ def test_version_flag_prints_version() -> None:
 def test_no_args_shows_help() -> None:
     result = _run()
     assert "Usage:" in result.stdout or "Usage:" in result.stderr
+
+
+def test_transfer_help() -> None:
+    result = _run("transfer", "--help")
+    assert result.returncode == 0
+    assert "run" in result.stdout
+    assert "batch" in result.stdout
+    assert "plan" in result.stdout
+
+
+def test_transfer_run_requires_config() -> None:
+    # No config file present in default location should yield exit 2
+    result = _run("transfer", "run", "remote", "local", "--config", "/nonexistent/c.toml")
+    assert result.returncode == 2
+    assert "config" in (result.stdout + result.stderr).lower()
