@@ -34,6 +34,7 @@ from atomx_toolkit.transfer.credentials import (
     load_sftp_credentials,
 )
 from atomx_toolkit.transfer.errors import LockHeldError, TransferError
+from atomx_toolkit.transfer.lock import read_lock
 from atomx_toolkit.transfer.md5 import assert_md5sum_available
 from atomx_toolkit.transfer.pipeline import run_pipeline
 
@@ -124,7 +125,7 @@ def run_cmd(
             failure_message=str(exc),
             log_path=log_path,
         )
-        dispatch_transfer_report(report, cfg=cfg, config_path=cfg_path, smtp_env=smtp_env_path)
+        dispatch_transfer_report(report, cfg=cfg, smtp_env=smtp_env_path)
         console.print(f"[red]transfer failed:[/red] {exc}")
         raise typer.Exit(code=1) from exc
     except KeyboardInterrupt:
@@ -142,7 +143,7 @@ def run_cmd(
             failure_message="KeyboardInterrupt",
             log_path=log_path,
         )
-        dispatch_transfer_report(report, cfg=cfg, config_path=cfg_path, smtp_env=smtp_env_path)
+        dispatch_transfer_report(report, cfg=cfg, smtp_env=smtp_env_path)
         console.print("[yellow]interrupted[/yellow]")
         raise typer.Exit(code=1) from None
     except Exception as exc:
@@ -160,7 +161,7 @@ def run_cmd(
             failure_message=f"{type(exc).__name__}: {exc}",
             log_path=log_path,
         )
-        dispatch_transfer_report(report, cfg=cfg, config_path=cfg_path, smtp_env=smtp_env_path)
+        dispatch_transfer_report(report, cfg=cfg, smtp_env=smtp_env_path)
         console.print(f"[red]unexpected error:[/red] {exc}")
         raise typer.Exit(code=3) from exc
 
@@ -179,7 +180,7 @@ def run_cmd(
         failure_message=None,
         log_path=log_path,
     )
-    dispatch_transfer_report(report, cfg=cfg, config_path=cfg_path, smtp_env=smtp_env_path)
+    dispatch_transfer_report(report, cfg=cfg, smtp_env=smtp_env_path)
     console.print(f"[green]ok:[/green] {name_local} ({result.file_count} files)")
 
 
@@ -232,23 +233,14 @@ def batch_cmd(
         raise typer.Exit(code=3) from exc
 
     _render_batch_summary(result)
-    items = [
-        BatchItem(
-            name_remote=i.name_remote,
-            name_local=i.name_local,
-            status=i.status,
-            duration=i.duration,
-            failure_message=i.failure_message,
-        )
-        for i in result.items
-    ]
+    items = [BatchItem.from_result(i) for i in result.items]
     batch_report = BatchReport(
         jobs_tsv=jobs_tsv,
         started_at=result.started_at,
         completed_at=result.completed_at,
         items=items,
     )
-    dispatch_batch_report(batch_report, cfg=cfg, config_path=cfg_path, smtp_env=smtp_env_path)
+    dispatch_batch_report(batch_report, cfg=cfg, smtp_env=smtp_env_path)
     if result.any_failed or result.all_skipped_locked:
         raise typer.Exit(code=1)
 
@@ -281,8 +273,6 @@ def _render_plan(plan: BatchPlan, log_root: Path, backup_root: Path) -> None:
     if plan.skipped_locked:
         console.print(f"  skipped_locked ({len(plan.skipped_locked)})")
         for _r, loc in plan.skipped_locked:
-            from atomx_toolkit.transfer.lock import read_lock
-
             payload = read_lock(backup_root / loc)
             desc = (
                 f"lock from {payload.get('hostname', '?')} pid {payload.get('pid', '?')} "

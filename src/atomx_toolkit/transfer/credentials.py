@@ -40,7 +40,7 @@ def load_sftp_credentials(dotenv_path: Path) -> SftpCredentials:
             f"SFTP credentials not found: env vars {_USER_KEY}/{_PASS_KEY} unset "
             f"and dotenv file does not exist: {dotenv_path}"
         )
-    parsed = _parse_dotenv(dotenv_path)
+    parsed = parse_dotenv(dotenv_path)
     user = parsed.get(_USER_KEY)
     password = parsed.get(_PASS_KEY)
     if not user or not password:
@@ -49,7 +49,7 @@ def load_sftp_credentials(dotenv_path: Path) -> SftpCredentials:
     return SftpCredentials(user=user, password=password)
 
 
-def _parse_dotenv(path: Path) -> dict[str, str]:
+def parse_dotenv(path: Path) -> dict[str, str]:
     """Minimal dotenv parser: KEY=VALUE per line, # comments, optional `export `."""
     result: dict[str, str] = {}
     for raw_line in path.read_text(encoding="utf-8").splitlines():

@@ -88,6 +88,15 @@ you@example.com
 (default.txt is a fallback; leave empty if event-specific files cover
 your needs.)
 
+If you pass `--config <path>` to a command, the recipients directory
+defaults to `<path>'s parent>/recipients`. The default config location
+`~/.config/atomx-toolkit/config.toml` therefore yields
+`~/.config/atomx-toolkit/recipients/`, which is what `install init`
+populates. If you point `--config` at a custom location like
+`/etc/atomx-toolkit/config.toml`, you'll need to either populate
+`/etc/atomx-toolkit/recipients/` yourself or set
+`[notify].recipients_dir` explicitly in the TOML.
+
 ## 7. Test the pipeline
 
 ```bash

@@ -26,9 +26,7 @@ from atomx_toolkit.notify.send import send_email
 logger = logging.getLogger(__name__)
 
 
-def dispatch_transfer_report(
-    report: TransferReport, *, cfg: Config, config_path: Path, smtp_env: Path
-) -> None:
+def dispatch_transfer_report(report: TransferReport, *, cfg: Config, smtp_env: Path) -> None:
     if not cfg.notify.enabled:
         return
     creds = load_smtp_credentials(smtp_env)
@@ -43,9 +41,7 @@ def dispatch_transfer_report(
     send_email(creds=creds, recipients=res.emails, subject=subject, body=body)
 
 
-def dispatch_batch_report(
-    report: BatchReport, *, cfg: Config, config_path: Path, smtp_env: Path
-) -> None:
+def dispatch_batch_report(report: BatchReport, *, cfg: Config, smtp_env: Path) -> None:
     if not cfg.notify.enabled:
         return
     creds = load_smtp_credentials(smtp_env)

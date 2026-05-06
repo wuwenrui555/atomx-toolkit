@@ -5,7 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
+
+if TYPE_CHECKING:
+    from atomx_toolkit.transfer.batch import BatchItemResult
 
 TransferStatus = Literal["success", "failed"]
 BatchItemStatus = Literal["complete_already", "skipped_locked", "succeeded", "failed"]
@@ -32,6 +35,16 @@ class BatchItem:
     status: BatchItemStatus
     duration: timedelta | None
     failure_message: str | None
+
+    @classmethod
+    def from_result(cls, item: BatchItemResult) -> BatchItem:
+        return cls(
+            name_remote=item.name_remote,
+            name_local=item.name_local,
+            status=item.status,
+            duration=item.duration,
+            failure_message=item.failure_message,
+        )
 
 
 @dataclass(frozen=True)

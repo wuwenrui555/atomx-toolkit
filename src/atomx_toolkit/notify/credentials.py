@@ -8,9 +8,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from atomx_toolkit.transfer.credentials import (
-    _parse_dotenv,  # pyright: ignore[reportPrivateUsage]  # reuse parser
-)
+from atomx_toolkit.transfer.credentials import parse_dotenv
 
 DEFAULT_HOST = "smtp.gmail.com"
 DEFAULT_PORT = 587
@@ -41,7 +39,7 @@ def load_smtp_credentials(
     host = os.environ.get(_HOST_KEY)
     port_raw = os.environ.get(_PORT_KEY)
     if not (user and password) and dotenv_path.exists():
-        parsed = _parse_dotenv(dotenv_path)
+        parsed = parse_dotenv(dotenv_path)
         user = user or parsed.get(_USER_KEY)
         password = password or parsed.get(_PASS_KEY)
         host = host or parsed.get(_HOST_KEY)

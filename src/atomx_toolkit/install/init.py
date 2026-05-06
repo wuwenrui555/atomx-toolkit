@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import shutil
+import sys
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -86,15 +87,19 @@ def _write_overwriteable(path: Path, content: str, force: bool) -> None:
 def _print_pre_checks(config_dir: Path) -> None:
     md5sum = shutil.which("md5sum")
     if md5sum:
-        print(f"[ok] md5sum present at {md5sum}")
+        print(f"[ok] md5sum present at {md5sum}", file=sys.stderr)
     else:
-        print("[warn] md5sum not on PATH; install GNU coreutils before running transfers")
+        print(
+            "[warn] md5sum not on PATH; install GNU coreutils before running transfers",
+            file=sys.stderr,
+        )
 
     known_hosts = Path.home() / ".ssh" / "known_hosts"
     if known_hosts.exists() or known_hosts.parent.is_dir():
-        print(f"[ok] known_hosts location ready at {known_hosts}")
+        print(f"[ok] known_hosts location ready at {known_hosts}", file=sys.stderr)
     else:
         print(
             f"[warn] {known_hosts.parent} does not exist; first SFTP connect will fail "
-            f"to persist host key. mkdir -p ~/.ssh and chmod 700 ~/.ssh"
+            f"to persist host key. mkdir -p ~/.ssh and chmod 700 ~/.ssh",
+            file=sys.stderr,
         )
