@@ -11,6 +11,8 @@ import pytest
 from atomx_toolkit.transfer.errors import (
     IntegrityError,
     LockHeldError,
+    RemoteListInconsistent,
+    TransferError,
 )
 from atomx_toolkit.transfer.lock import LOCK_FILENAME
 from atomx_toolkit.transfer.pipeline import PipelineResult, run_pipeline
@@ -171,3 +173,95 @@ def test_md5_mismatch_raises_integrity_error(
 
     assert (log_root / "study_local" / "index" / "md5sum_fail").exists()
     assert (log_root / "study_local" / "md5sum" / "md5sum_diff.csv").exists()
+
+
+def test_phase1_list_inconsistency_raises(
+    sftp_server: SftpServerFixture,
+    tmp_path: Path,
+    known_hosts_isolated: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When the remote returns different file sets across two listdir calls,
+    pipeline must raise RemoteListInconsistent and write index/path_fail."""
+    seed_remote(sftp_server, {"study/a.txt": b"x", "study/b.txt": b"y"})
+    log_root = tmp_path / "log"
+    backup_root = tmp_path / "backup"
+
+    # Patch SftpClient.walk_files to return DIFFERENT sets on consecutive calls.
+    from atomx_toolkit.transfer import sftp as sftp_module
+
+    call_count = {"n": 0}
+
+    def flaky_walk(self: sftp_module.SftpClient, root: str):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            yield "/study/a.txt"
+            yield "/study/b.txt"
+        else:
+            # Second call returns a different set
+            yield "/study/a.txt"
+            # b.txt missing intentionally
+
+    monkeypatch.setattr(sftp_module.SftpClient, "walk_files", flaky_walk)
+
+    with pytest.raises(RemoteListInconsistent):
+        _run(sftp_server, log_root, backup_root, "study", "study_local")
+
+    # path_fail marker present, path_pass absent
+    assert (log_root / "study_local" / "index" / "path_fail").exists()
+    assert not (log_root / "study_local" / "index" / "path_pass").exists()
+
+
+def test_resume_after_phase2_interruption(
+    sftp_server: SftpServerFixture,
+    tmp_path: Path,
+    known_hosts_isolated: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If a download fails mid-Phase-2, re-running the pipeline completes successfully."""
+    seed_remote(
+        sftp_server,
+        {
+            "study/a.txt": b"alpha",
+            "study/b.txt": b"beta",
+            "study/c.txt": b"gamma",
+        },
+    )
+    log_root = tmp_path / "log"
+    backup_root = tmp_path / "backup"
+
+    # Patch download_file to raise on the SECOND call of the FIRST run only.
+    from atomx_toolkit.transfer import sftp as sftp_module
+
+    original_download = sftp_module.SftpClient.download_file
+    state = {"calls": 0, "raise_on_call": 2}
+
+    def flaky_download(self: sftp_module.SftpClient, remote: str, local: Path) -> None:
+        state["calls"] += 1
+        if state["calls"] == state["raise_on_call"]:
+            raise OSError("simulated network drop")
+        original_download(self, remote, local)
+
+    monkeypatch.setattr(sftp_module.SftpClient, "download_file", flaky_download)
+
+    # First run should fail somewhere in Phase 2
+    with pytest.raises((OSError, TransferError)):
+        _run(sftp_server, log_root, backup_root, "study", "study_local")
+
+    # Lock should be released by the finally block
+    assert not (backup_root / "study_local" / LOCK_FILENAME).exists()
+
+    # Restore download_file for the retry
+    monkeypatch.setattr(sftp_module.SftpClient, "download_file", original_download)
+
+    # Re-run completes
+    result = _run(sftp_server, log_root, backup_root, "study", "study_local")
+    assert result.status == "success"
+    assert result.file_count == 3
+    # All three files present in primary backup
+    primary = backup_root / "study_local" / "AtoMx"
+    assert (primary / "a.txt").exists()
+    assert (primary / "b.txt").exists()
+    assert (primary / "c.txt").exists()
+    # No leftover .part files
+    assert not list(primary.glob("**/*.part"))
