@@ -42,7 +42,7 @@ ATOMX_SMTP_APP_PASSWORD=
 
 # Optional overrides; defaults shown
 # ATOMX_SMTP_HOST=smtp.gmail.com
-# ATOMX_SMTP_PORT=587
+# ATOMX_SMTP_PORT=465
 """
 
 

@@ -30,6 +30,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "paramiko" },
+    { name = "pingme" },
     { name = "rich" },
     { name = "typer" },
 ]
@@ -47,6 +48,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "paramiko", specifier = ">=3,<5" },
+    { name = "pingme", git = "https://github.com/wuwenrui555/pingme.git?rev=v0.1.2" },
     { name = "rich", specifier = ">=15.0.0" },
     { name = "typer", specifier = ">=0.12" },
 ]
@@ -467,6 +469,11 @@ sdist = { url = "https://files.pythonhosted.org/packages/1f/e7/81fdcbc7f190cdb05
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a9/90/a744336f5af32c433bd09af7854599682a383b37cfd78f7de263de6ad6cb/paramiko-4.0.0-py3-none-any.whl", hash = "sha256:0e20e00ac666503bf0b4eda3b6d833465a2b7aff2e2b3d79a8bba5ef144ee3b9", size = 223932, upload-time = "2025-08-04T01:02:02.029Z" },
 ]
+
+[[package]]
+name = "pingme"
+version = "0.1.2"
+source = { git = "https://github.com/wuwenrui555/pingme.git?rev=v0.1.2#68cb9dcadf1c4c6d619df6537d131c8fe71b745b" }
 
 [[package]]
 name = "platformdirs"
