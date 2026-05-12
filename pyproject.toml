@@ -11,6 +11,7 @@ dependencies = [
     "typer>=0.12",
     "rich>=15.0.0",
     "pingme @ git+https://github.com/wuwenrui555/pingme.git@v0.1.2",
+    "jianglab-name-standard @ git+https://github.com/wuwenrui555/jianglab-name-standard.git@v0.1.1",
 ]
 
 [project.scripts]

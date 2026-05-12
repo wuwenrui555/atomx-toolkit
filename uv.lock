@@ -29,6 +29,7 @@ name = "atomx-toolkit"
 version = "0.2.0"
 source = { editable = "." }
 dependencies = [
+    { name = "jianglab-name-standard" },
     { name = "paramiko" },
     { name = "pingme" },
     { name = "rich" },
@@ -47,6 +48,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "jianglab-name-standard", git = "https://github.com/wuwenrui555/jianglab-name-standard.git?rev=v0.1.1" },
     { name = "paramiko", specifier = ">=3,<5" },
     { name = "pingme", git = "https://github.com/wuwenrui555/pingme.git?rev=v0.1.2" },
     { name = "rich", specifier = ">=15.0.0" },
@@ -415,6 +417,11 @@ sdist = { url = "https://files.pythonhosted.org/packages/33/f6/227c48c5fe47fa178
 wheels = [
     { url = "https://files.pythonhosted.org/packages/5a/de/bbc12563bbf979618d17625a4e753ff7a078523e28d870d3626daa97261a/invoke-3.0.3-py3-none-any.whl", hash = "sha256:f11327165e5cbb89b2ad1d88d3292b5113332c43b8553b494da435d6ec6f5053", size = 160958, upload-time = "2026-04-07T15:17:46.875Z" },
 ]
+
+[[package]]
+name = "jianglab-name-standard"
+version = "0.1.1"
+source = { git = "https://github.com/wuwenrui555/jianglab-name-standard.git?rev=v0.1.1#5733a8ed0606fdc4615f924bfd784ca778f640ee" }
 
 [[package]]
 name = "markdown-it-py"
