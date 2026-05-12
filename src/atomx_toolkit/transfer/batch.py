@@ -134,6 +134,12 @@ def run_batch(
     pending items are appended as 'failed' with reason 'not run, batch aborted'.
     Per-item exceptions are caught and recorded; the next item still runs.
     """
+    logger.info(
+        "batch started: %d pending, %d complete_already, %d skipped_locked",
+        len(plan.pending),
+        len(plan.complete_already),
+        len(plan.skipped_locked),
+    )
     started_at = datetime.now(UTC)
     items: list[BatchItemResult] = []
     for job in plan.complete_already:
@@ -161,6 +167,7 @@ def run_batch(
                 )
             )
             continue
+        logger.info("starting study %d/%d: %s", idx + 1, len(plan.pending), job[1])
         item_start = datetime.now(UTC)
         try:
             result = run_pipeline(
@@ -218,6 +225,13 @@ def run_batch(
                 )
             )
     completed_at = datetime.now(UTC)
+    logger.info(
+        "batch finished: %d succeeded, %d failed, %d complete_already, %d skipped_locked",
+        sum(1 for i in items if i.status == "succeeded"),
+        sum(1 for i in items if i.status == "failed"),
+        sum(1 for i in items if i.status == "complete_already"),
+        sum(1 for i in items if i.status == "skipped_locked"),
+    )
     return BatchRunResult(
         jobs_tsv=jobs_tsv_path,
         started_at=started_at,

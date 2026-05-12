@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime
 from pathlib import Path
 
 import pytest
 
+import atomx_toolkit.transfer.pipeline as pipeline_module
 from atomx_toolkit.transfer.errors import (
     IntegrityError,
     LockHeldError,
@@ -265,3 +267,97 @@ def test_resume_after_phase2_interruption(
     assert (primary / "c.txt").exists()
     # No leftover .part files
     assert not list(primary.glob("**/*.part"))
+
+
+def test_run_pipeline_emits_phase_logs(
+    sftp_server: SftpServerFixture,
+    tmp_path: Path,
+    known_hosts_isolated: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Happy-path run emits an ordered sequence of phase-level INFO logs so
+    operators tailing the batch log can see progress."""
+    seed_remote(
+        sftp_server,
+        {
+            "study/a.txt": b"hello",
+            "study/sub/b.txt": b"world",
+        },
+    )
+    log_root = tmp_path / "log"
+    backup_root = tmp_path / "backup"
+    caplog.set_level(logging.INFO, logger="atomx_toolkit.transfer.pipeline")
+    result = _run(sftp_server, log_root, backup_root, "study", "study_local")
+    assert result.status == "success"
+
+    info_msgs = [rec.getMessage() for rec in caplog.records if rec.levelno == logging.INFO]
+    expected_substrings = [
+        "starting study",
+        "phase 1: listing remote files",
+        "files listed",
+        "phase 2: downloading primary",
+        "phase 3: downloading secondary",
+        "phase 4: computing md5",
+        "phase 5: computing md5",
+        "phase 6: comparing md5",
+        "complete:",
+    ]
+    # Assert each substring appears, in order.
+    idx = 0
+    for needle in expected_substrings:
+        while idx < len(info_msgs) and needle not in info_msgs[idx]:
+            idx += 1
+        assert idx < len(info_msgs), (
+            f"missing INFO log containing {needle!r}; captured: {info_msgs}"
+        )
+        idx += 1
+
+
+def test_download_all_emits_progress_every_n_files(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """_download_all emits an INFO `[N/total] progress in <dir>` line every
+    PROGRESS_INTERVAL completed files plus a final line when total isn't a
+    multiple of the interval.
+
+    With PROGRESS_INTERVAL=2 and 5 files, expect logs at 2, 4, 5."""
+    monkeypatch.setattr(pipeline_module, "PROGRESS_INTERVAL", 2)
+    local_dir = tmp_path / "AtoMx"
+    local_dir.mkdir()
+
+    remote_dir = "/remote/study"
+    remote_files = [f"{remote_dir}/f{i}.txt" for i in range(5)]
+
+    download_calls: list[tuple[str, Path]] = []
+
+    class FakeClient:
+        def download_file(self, remote: str, local: Path) -> None:
+            download_calls.append((remote, local))
+            local.parent.mkdir(parents=True, exist_ok=True)
+            local.write_bytes(b"x")
+
+        def stat_size(self, remote: str) -> int:  # pragma: no cover - unused here
+            return 1
+
+    caplog.set_level(logging.INFO, logger="atomx_toolkit.transfer.pipeline")
+    pipeline_module._download_all(  # pyright: ignore[reportPrivateUsage]
+        FakeClient(),  # type: ignore[arg-type]
+        remote_dir,
+        remote_files,
+        local_dir,
+    )
+
+    assert len(download_calls) == 5
+    progress_msgs = [
+        rec.getMessage()
+        for rec in caplog.records
+        if rec.levelno == logging.INFO and "progress in" in rec.getMessage()
+    ]
+    assert len(progress_msgs) == 3, f"expected 3 progress lines, got {progress_msgs}"
+    assert "[2/5]" in progress_msgs[0]
+    assert "[4/5]" in progress_msgs[1]
+    assert "[5/5]" in progress_msgs[2]
+    for msg in progress_msgs:
+        assert "AtoMx" in msg

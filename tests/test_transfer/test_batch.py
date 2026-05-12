@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -343,3 +344,29 @@ def test_run_batch_includes_pre_scan_items(tmp_path: Path, monkeypatch: pytest.M
     msg = result.items[1].failure_message
     assert msg is not None
     assert "host-x" in msg and "99" in msg
+
+
+def test_run_batch_emits_boundary_logs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """run_batch emits a `batch started:` line, one `starting study N/M:` line
+    per pending item, and a final `batch finished:` summary line."""
+    jobs = [("r1", "l1"), ("r2", "l2")]
+    plan = BatchPlan(complete_already=[], skipped_locked=[], pending=jobs)
+    fake, _call_count = _make_fake_pipeline(["success", "success"])
+    monkeypatch.setattr(batch_module, "run_pipeline", fake)
+
+    caplog.set_level(logging.INFO, logger="atomx_toolkit.transfer.batch")
+    run_batch(jobs, plan=plan, **_run_batch_args(tmp_path))  # type: ignore[arg-type]
+
+    info_msgs = [rec.getMessage() for rec in caplog.records if rec.levelno == logging.INFO]
+    assert any("batch started:" in m for m in info_msgs), info_msgs
+    starting_msgs = [m for m in info_msgs if "starting study" in m]
+    assert len(starting_msgs) == 2, info_msgs
+    assert "1/2" in starting_msgs[0]
+    assert "l1" in starting_msgs[0]
+    assert "2/2" in starting_msgs[1]
+    assert "l2" in starting_msgs[1]
+    assert any("batch finished:" in m for m in info_msgs), info_msgs
