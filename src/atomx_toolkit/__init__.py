@@ -1,3 +1,3 @@
 """atomx-toolkit: AtoMx SFTP transfer with integrity check and email reporting."""
 
-__version__ = "0.3.0"
+__version__ = "0.3.1"
