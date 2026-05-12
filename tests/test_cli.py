@@ -15,10 +15,12 @@ def _run(*args: str) -> subprocess.CompletedProcess[str]:
 
 
 def test_version_flag_prints_version() -> None:
+    from atomx_toolkit import __version__
+
     result = _run("--version")
     assert result.returncode == 0
     assert "atomx-toolkit" in result.stdout
-    assert "0.1.0" in result.stdout
+    assert __version__ in result.stdout
 
 
 def test_no_args_shows_help() -> None:
