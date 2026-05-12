@@ -30,6 +30,10 @@ from atomx_toolkit.transfer.sftp import SftpClient
 logger = logging.getLogger(__name__)
 
 
+PROGRESS_INTERVAL = 10
+"""Emit a `[N/total]` INFO log every Nth completed file in _download_all."""
+
+
 PipelineStatus = Literal["success", "skipped_already_complete"]
 
 
@@ -59,6 +63,7 @@ def run_pipeline(
 ) -> PipelineResult:
     """Run the per-study pipeline. Raises TransferError subclasses on failure."""
     started_at = datetime.now(UTC)
+    logger.info("starting study %s (remote=%s)", name_local, name_remote)
     log_dir = log_root / name_local
     backup_dir = backup_root / name_local
     index_dir = log_dir / "index"
@@ -93,6 +98,7 @@ def run_pipeline(
     try:
         with SftpClient(host=host, port=port, user=user, password=password) as client:
             remote_dir = _join_remote(remote_root, name_remote)
+            logger.info("phase 1: listing remote files at %s", remote_dir)
 
             # Phase 1: list twice and compare
             remote_fs_1 = sorted(client.walk_files(remote_dir))
@@ -111,6 +117,7 @@ def run_pipeline(
             _touch(index_dir / "path_pass")
 
             file_count = len(remote_fs_1)
+            logger.info("phase 1: %d files listed", file_count)
             if file_count == 0:
                 logger.warning(
                     "study %s has no files on the remote (typo'd name? deleted study?)",
@@ -118,18 +125,23 @@ def run_pipeline(
                 )
 
             # Phase 2: download to AtoMx/
+            logger.info("phase 2: downloading primary copy to %s", primary.name)
             _download_all(client, remote_dir, remote_fs_1, primary)
             # Phase 3: download to AtoMx_copy/
+            logger.info("phase 3: downloading secondary copy to %s", secondary.name)
             _download_all(client, remote_dir, remote_fs_1, secondary)
 
         # Phase 4: md5 of AtoMx/
+        logger.info("phase 4: computing md5 of %s", primary.name)
         md5_dict_1 = compute_md5_tree(primary)
         write_md5_file(md5_dict_1, md5_dir / "md5sum_1.txt")
         # Phase 5: md5 of AtoMx_copy/
+        logger.info("phase 5: computing md5 of %s", secondary.name)
         md5_dict_2 = compute_md5_tree(secondary)
         write_md5_file(md5_dict_2, md5_dir / "md5sum_2.txt")
 
         # Phase 6: compare
+        logger.info("phase 6: comparing md5 of primary vs secondary")
         cmp = compare_md5_files(
             md5_dir / "md5sum_1.txt",
             md5_dir / "md5sum_2.txt",
@@ -149,6 +161,12 @@ def run_pipeline(
             if p.is_file():
                 total_bytes += p.stat().st_size
 
+        logger.info(
+            "study %s complete: %d files, %d bytes",
+            name_local,
+            file_count,
+            total_bytes,
+        )
         return PipelineResult(
             name_remote=name_remote,
             name_local=name_local,
@@ -179,8 +197,14 @@ def _download_all(
     remote_files: list[str],
     local_dir: Path,
 ) -> None:
-    """Download each remote file to local_dir, with size-match resume."""
+    """Download each remote file to local_dir, with size-match resume.
+
+    Emits an INFO progress line every PROGRESS_INTERVAL completed files
+    so operators tailing the batch log can see liveness.
+    """
     remote_dir_with_slash = remote_dir if remote_dir.endswith("/") else remote_dir + "/"
+    total = len(remote_files)
+    completed = 0
     for remote in remote_files:
         if not remote.startswith(remote_dir_with_slash):
             # remote_dir itself is a file? skip
@@ -196,6 +220,9 @@ def _download_all(
             else:
                 if local.stat().st_size == remote_size:
                     logger.debug("skipping %s (size matches)", rel)
+                    completed += 1
+                    if completed % PROGRESS_INTERVAL == 0 or completed == total:
+                        logger.info("[%d/%d] progress in %s", completed, total, local_dir.name)
                     continue
                 logger.info("re-downloading %s (size mismatch)", rel)
                 local.unlink(missing_ok=True)
@@ -204,3 +231,6 @@ def _download_all(
         if part.exists():
             part.unlink()
         client.download_file(remote, local)
+        completed += 1
+        if completed % PROGRESS_INTERVAL == 0 or completed == total:
+            logger.info("[%d/%d] progress in %s", completed, total, local_dir.name)

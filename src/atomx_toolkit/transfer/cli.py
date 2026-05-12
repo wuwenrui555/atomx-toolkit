@@ -240,6 +240,27 @@ def batch_cmd(
         console.print(f"[red]unexpected error:[/red] {exc}")
         raise typer.Exit(code=3) from exc
 
+    for item in result.items:
+        if item.status not in ("succeeded", "failed"):
+            continue
+        if item.started_at is None or item.completed_at is None:
+            continue
+        per_study_status = "success" if item.status == "succeeded" else "failed"
+        per_study_log = cfg.paths.log_root / item.name_local / f"{item.name_local}.log"
+        per_study_report = TransferReport(
+            name_remote=item.name_remote,
+            name_local=item.name_local,
+            status=per_study_status,
+            started_at=item.started_at,
+            completed_at=item.completed_at,
+            file_count=item.file_count,
+            total_bytes=item.total_bytes,
+            failure_phase=item.failure_phase,
+            failure_message=item.failure_message,
+            log_path=per_study_log,
+        )
+        dispatch_transfer_report(per_study_report, cfg=cfg, smtp_env=smtp_env_path)
+
     _render_batch_summary(result)
     items = [BatchItem.from_result(i) for i in result.items]
     batch_report = BatchReport(

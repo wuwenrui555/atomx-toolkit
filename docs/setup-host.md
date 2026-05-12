@@ -16,12 +16,12 @@ sudo dnf install python3.12 coreutils
 ## 2. Install atomx-toolkit
 
 ```bash
-pip install --user git+https://github.com/wuwenrui555/atomx-toolkit.git@v0.3.0
+pip install --user git+https://github.com/wuwenrui555/atomx-toolkit.git@v0.3.1
 ```
 
 Or use `uv`:
 ```bash
-uv tool install git+https://github.com/wuwenrui555/atomx-toolkit.git@v0.3.0
+uv tool install git+https://github.com/wuwenrui555/atomx-toolkit.git@v0.3.1
 ```
 
 ## 3. Initialize config
