@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 
-from atomx_toolkit.notify.send import DedupState, should_send_toolkit_error
+from atomx_toolkit.notify.dedup import DedupState, should_send_toolkit_error
 
 ToolkitErrorSender = Callable[..., None]
 """Signature: sender(*, subject: str, body: str) -> None."""

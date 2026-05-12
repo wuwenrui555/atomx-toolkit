@@ -13,6 +13,8 @@ if TYPE_CHECKING:
 TransferStatus = Literal["success", "failed"]
 BatchItemStatus = Literal["complete_already", "skipped_locked", "succeeded", "failed"]
 
+ALL_EVENTS = ("transfer_report", "batch_report", "toolkit_error")
+
 
 @dataclass(frozen=True)
 class TransferReport:

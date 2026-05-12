@@ -9,19 +9,16 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+from pingme import SmtpCredentialsMissing, resolve_recipients, send_email
+
 from atomx_toolkit.config import Config
-from atomx_toolkit.notify.credentials import (
-    SmtpCredentialsMissing,
-    load_smtp_credentials,
-)
+from atomx_toolkit.notify.credentials import load_smtp_credentials
 from atomx_toolkit.notify.events import (
     BatchReport,
     TransferReport,
     format_batch_report,
     format_transfer_report,
 )
-from atomx_toolkit.notify.recipients import resolve_recipients
-from atomx_toolkit.notify.send import send_email
 
 logger = logging.getLogger(__name__)
 

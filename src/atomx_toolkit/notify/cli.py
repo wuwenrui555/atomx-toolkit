@@ -6,15 +6,12 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
+from pingme import SmtpCredentialsMissing, resolve_recipients, send_email
 from rich.console import Console
 
 from atomx_toolkit.config import ConfigError, load_config
-from atomx_toolkit.notify.credentials import (
-    SmtpCredentialsMissing,
-    load_smtp_credentials,
-)
-from atomx_toolkit.notify.recipients import ALL_EVENTS, resolve_recipients
-from atomx_toolkit.notify.send import send_email
+from atomx_toolkit.notify.credentials import load_smtp_credentials
+from atomx_toolkit.notify.events import ALL_EVENTS
 
 app = typer.Typer(name="notify", no_args_is_help=True, help="Email notification commands.")
 console = Console(stderr=True)

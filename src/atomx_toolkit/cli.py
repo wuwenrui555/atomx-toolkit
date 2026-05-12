@@ -6,18 +6,15 @@ import logging
 from pathlib import Path
 
 import typer
+from pingme import SmtpCredentialsMissing, resolve_recipients, send_email
 
 from atomx_toolkit import __version__
 from atomx_toolkit.config import ConfigError, load_config
 from atomx_toolkit.install.cli import app as install_app
 from atomx_toolkit.notify.cli import app as notify_app
-from atomx_toolkit.notify.credentials import (
-    SmtpCredentialsMissing,
-    load_smtp_credentials,
-)
+from atomx_toolkit.notify.credentials import load_smtp_credentials
+from atomx_toolkit.notify.dedup import DedupState
 from atomx_toolkit.notify.handler import ToolkitErrorHandler
-from atomx_toolkit.notify.recipients import resolve_recipients
-from atomx_toolkit.notify.send import DedupState, send_email
 from atomx_toolkit.transfer.cli import app as transfer_app
 
 app = typer.Typer(

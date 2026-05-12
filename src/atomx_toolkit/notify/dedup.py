@@ -1,50 +1,12 @@
-"""SMTP send + toolkit_error dedup state."""
+"""toolkit_error dedup state: timestamp-normalized content key with cooldown."""
 
 from __future__ import annotations
 
 import json
-import logging
 import re
-import smtplib
 import time
 from dataclasses import dataclass
-from email.message import EmailMessage
 from pathlib import Path
-
-from atomx_toolkit.notify.credentials import SmtpCredentials
-
-logger = logging.getLogger(__name__)
-
-
-def send_email(
-    *,
-    creds: SmtpCredentials,
-    recipients: list[str],
-    subject: str,
-    body: str,
-    use_tls: bool = True,
-) -> None:
-    """Send a single plain-text email. Logs and returns silently on no recipients."""
-    if not recipients:
-        logger.info("no recipients; skipping email %r", subject)
-        return
-    msg = EmailMessage()
-    msg["From"] = creds.user
-    msg["To"] = ", ".join(recipients)
-    msg["Subject"] = subject
-    msg.set_content(body)
-    try:
-        with smtplib.SMTP(creds.host, creds.port, timeout=30) as smtp:
-            if use_tls:
-                smtp.starttls()
-                smtp.login(creds.user, creds.password)
-            smtp.send_message(msg)
-        logger.info("sent email %r to %d recipients", subject, len(recipients))
-    except (smtplib.SMTPException, OSError) as exc:
-        logger.error("smtp failure for %r: %s", subject, exc)
-
-
-# ---- dedup ----
 
 
 @dataclass
