@@ -11,13 +11,15 @@ import pytest
 
 import atomx_toolkit.transfer.batch as batch_module
 from atomx_toolkit.transfer.batch import (
+    BatchItemResult,
     BatchPlan,
+    BatchRunResult,
     JobsTsvError,
     classify_jobs,
     parse_jobs_tsv,
     run_batch,
 )
-from atomx_toolkit.transfer.errors import LockHeldError
+from atomx_toolkit.transfer.errors import IntegrityError, LockHeldError
 from atomx_toolkit.transfer.lock import LOCK_FILENAME
 from atomx_toolkit.transfer.pipeline import PipelineResult
 
@@ -370,3 +372,245 @@ def test_run_batch_emits_boundary_logs(
     assert "2/2" in starting_msgs[1]
     assert "l2" in starting_msgs[1]
     assert any("batch finished:" in m for m in info_msgs), info_msgs
+
+
+# ---- new fields populated by run_batch ----
+
+
+def _fake_pipeline_with_stats(file_count: int, total_bytes: int) -> object:
+    """Fake run_pipeline that returns a successful PipelineResult with given stats."""
+
+    def fake(
+        *,
+        name_remote: str,
+        name_local: str,
+        **_kw: object,
+    ) -> PipelineResult:
+        now = datetime.now(UTC)
+        return PipelineResult(
+            name_remote=name_remote,
+            name_local=name_local,
+            status="success",
+            started_at=now,
+            completed_at=now,
+            file_count=file_count,
+            total_bytes=total_bytes,
+        )
+
+    return fake
+
+
+def test_run_batch_populates_new_fields_on_success(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Successful run populates started_at, completed_at, file_count, total_bytes."""
+    jobs = [("r1", "l1")]
+    plan = BatchPlan(complete_already=[], skipped_locked=[], pending=jobs)
+    monkeypatch.setattr(batch_module, "run_pipeline", _fake_pipeline_with_stats(10, 12345))
+
+    result = run_batch(jobs, plan=plan, **_run_batch_args(tmp_path))  # type: ignore[arg-type]
+
+    item = result.items[0]
+    assert item.status == "succeeded"
+    assert item.started_at is not None
+    assert item.completed_at is not None
+    assert item.completed_at >= item.started_at
+    assert item.file_count == 10
+    assert item.total_bytes == 12345
+    assert item.failure_phase is None
+    assert item.failure_message is None
+
+
+def test_run_batch_populates_failure_phase_on_exception(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Generic exception populates failure_phase=type-name and started/completed timestamps."""
+    jobs = [("r1", "l1")]
+    plan = BatchPlan(complete_already=[], skipped_locked=[], pending=jobs)
+    fake, _ = _make_fake_pipeline([IntegrityError("md5 mismatch")])
+    monkeypatch.setattr(batch_module, "run_pipeline", fake)
+
+    result = run_batch(jobs, plan=plan, **_run_batch_args(tmp_path))  # type: ignore[arg-type]
+
+    item = result.items[0]
+    assert item.status == "failed"
+    assert item.failure_phase == "IntegrityError"
+    assert item.failure_message is not None
+    assert "md5 mismatch" in item.failure_message
+    assert item.started_at is not None
+    assert item.completed_at is not None
+    assert item.completed_at >= item.started_at
+    assert item.file_count is None
+    assert item.total_bytes is None
+
+
+def test_run_batch_lock_held_leaves_new_fields_none(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """LockHeldError path: item did not run, so started_at/completed_at/file_count
+    /total_bytes/failure_phase all stay None."""
+    jobs = [("r1", "l1")]
+    plan = BatchPlan(complete_already=[], skipped_locked=[], pending=jobs)
+    fake, _ = _make_fake_pipeline(
+        [
+            LockHeldError(
+                {
+                    "hostname": "other",
+                    "pid": 42,
+                    "started_at": "2026-01-01T00:00:00+00:00",
+                }
+            )
+        ]
+    )
+    monkeypatch.setattr(batch_module, "run_pipeline", fake)
+
+    result = run_batch(jobs, plan=plan, **_run_batch_args(tmp_path))  # type: ignore[arg-type]
+
+    item = result.items[0]
+    assert item.status == "skipped_locked"
+    assert item.started_at is None
+    assert item.completed_at is None
+    assert item.file_count is None
+    assert item.total_bytes is None
+    assert item.failure_phase is None
+
+
+def test_run_batch_keyboard_interrupt_populates_phase_and_timestamps(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """KeyboardInterrupt path: started_at/completed_at set, failure_phase='interrupted'.
+    Subsequent aborted-tail items leave timestamps/phase as None."""
+    jobs = [("r1", "l1"), ("r2", "l2")]
+    plan = BatchPlan(complete_already=[], skipped_locked=[], pending=jobs)
+    fake, _ = _make_fake_pipeline([KeyboardInterrupt(), "success"])
+    monkeypatch.setattr(batch_module, "run_pipeline", fake)
+
+    result = run_batch(jobs, plan=plan, **_run_batch_args(tmp_path))  # type: ignore[arg-type]
+
+    # Item 0: the interrupted item.
+    interrupted = result.items[0]
+    assert interrupted.status == "failed"
+    assert interrupted.failure_phase == "interrupted"
+    assert interrupted.started_at is not None
+    assert interrupted.completed_at is not None
+    assert interrupted.completed_at >= interrupted.started_at
+
+    # Item 1: the aborted-tail item (never ran).
+    aborted = result.items[1]
+    assert aborted.status == "failed"
+    assert aborted.failure_message == "not run, batch aborted"
+    assert aborted.started_at is None
+    assert aborted.completed_at is None
+    assert aborted.failure_phase is None
+
+
+# ---- batch_cmd dispatches per-study transfer_report ----
+
+
+def test_batch_cmd_dispatches_transfer_report_per_succeeded_or_failed_item(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """batch_cmd should dispatch a transfer_report exactly once per
+    {succeeded, failed} item (skipping complete_already and skipped_locked),
+    and one batch_report at the end."""
+    from unittest.mock import MagicMock
+
+    from typer.testing import CliRunner
+
+    import atomx_toolkit.transfer.cli as transfer_cli_module
+    from atomx_toolkit.transfer.cli import app
+
+    # Build a fake BatchRunResult with one item of each status.
+    now = datetime.now(UTC)
+    fake_items = [
+        BatchItemResult(
+            name_remote="rA",
+            name_local="20260101_T_D_sA_v1-0-0",
+            status="succeeded",
+            started_at=now,
+            completed_at=now,
+            file_count=3,
+            total_bytes=999,
+        ),
+        BatchItemResult(
+            name_remote="rB",
+            name_local="20260101_T_D_sB_v1-0-0",
+            status="failed",
+            started_at=now,
+            completed_at=now,
+            failure_phase="IntegrityError",
+            failure_message="md5 mismatch",
+        ),
+        BatchItemResult(
+            name_remote="rC",
+            name_local="20260101_T_D_sC_v1-0-0",
+            status="complete_already",
+        ),
+        BatchItemResult(
+            name_remote="rD",
+            name_local="20260101_T_D_sD_v1-0-0",
+            status="skipped_locked",
+            failure_message="locked",
+        ),
+    ]
+    fake_result = BatchRunResult(
+        jobs_tsv=tmp_path / "jobs.tsv",
+        started_at=now,
+        completed_at=now,
+        items=fake_items,
+    )
+
+    mock_dispatch_transfer = MagicMock()
+    mock_dispatch_batch = MagicMock()
+
+    def fake_run_batch(**_kw: object) -> BatchRunResult:
+        return fake_result
+
+    def fake_md5_available() -> None:
+        return None
+
+    monkeypatch.setattr(transfer_cli_module, "run_batch", fake_run_batch)
+    monkeypatch.setattr(transfer_cli_module, "dispatch_transfer_report", mock_dispatch_transfer)
+    monkeypatch.setattr(transfer_cli_module, "dispatch_batch_report", mock_dispatch_batch)
+    monkeypatch.setattr(transfer_cli_module, "assert_md5sum_available", fake_md5_available)
+
+    # Minimal config and credentials so batch_cmd can load them without erroring.
+    config_path = tmp_path / "config.toml"
+    log_root = tmp_path / "log"
+    backup_root = tmp_path / "backup"
+    config_path.write_text(
+        '[sftp]\nhostname = "h"\nremote_root = "/"\n'
+        f'[paths]\nlog_root = "{log_root.as_posix()}"\n'
+        f'backup_root = "{backup_root.as_posix()}"\n'
+    )
+    sftp_env_path = tmp_path / "sftp.env"
+    sftp_env_path.write_text("ATOMX_SFTP_USER=u\nATOMX_SFTP_PASSWORD=p\n")
+    monkeypatch.setattr(transfer_cli_module, "_default_sftp_env_path", lambda: sftp_env_path)
+    monkeypatch.setattr(
+        transfer_cli_module,
+        "_default_smtp_env_path",
+        lambda: tmp_path / "smtp.env",
+    )
+
+    # jobs.tsv with two valid CosmxRunNames (only parsed, the fake run_batch ignores them).
+    jobs_tsv = tmp_path / "jobs.tsv"
+    jobs_tsv.write_text(
+        "rA\t20260101_T_D_sA_v1-0-0\nrB\t20260101_T_D_sB_v1-0-0\n",
+    )
+
+    runner = CliRunner()
+    result_cli = runner.invoke(
+        app,
+        ["batch", str(jobs_tsv), "--config", str(config_path)],
+    )
+
+    # batch_cmd exits 1 because any_failed is True; that's fine for this test.
+    assert result_cli.exit_code == 1
+    assert mock_dispatch_transfer.call_count == 2
+    assert mock_dispatch_batch.call_count == 1
+
+    # Confirm the per-study reports carry the expected status mapping.
+    dispatched_statuses = sorted(
+        call.args[0].status for call in mock_dispatch_transfer.call_args_list
+    )
+    assert dispatched_statuses == ["failed", "success"]
