@@ -88,6 +88,37 @@ def test_parse_duplicate_local_raises(tmp_path: Path) -> None:
         parse_jobs_tsv(p)
 
 
+def test_parse_rejects_invalid_name_local(tmp_path: Path) -> None:
+    """name_local that does not match CosmxRunName raises JobsTsvError with
+    line number, the bad name, the rule_id, and the jianglab hint."""
+    p = _write(tmp_path / "j.tsv", "remoteA\tbad_name\n")
+    with pytest.raises(JobsTsvError) as excinfo:
+        parse_jobs_tsv(p)
+    msg = str(excinfo.value)
+    assert "line 1" in msg
+    assert "bad_name" in msg
+    assert "[R1]" in msg
+    assert "hint:" in msg
+
+
+def test_parse_duplicate_check_runs_before_validation(tmp_path: Path) -> None:
+    """When a TSV has both a duplicate name_local AND an invalid one further
+    down, the duplicate error wins (because the duplicate check runs first)."""
+    p = _write(
+        tmp_path / "j.tsv",
+        f"r1\t{_local('A')}\nr2\t{_local('A')}\nr3\tbad_name\n",
+    )
+    with pytest.raises(JobsTsvError, match="duplicate"):
+        parse_jobs_tsv(p)
+
+
+def test_parse_valid_cosmx_name_local_passes(tmp_path: Path) -> None:
+    """A canonical 5-field CosmxRunName parses fine."""
+    name = "20260211_WW_ACLF_run1_v2-2-1"
+    p = _write(tmp_path / "j.tsv", f"remoteA\t{name}\n")
+    assert parse_jobs_tsv(p) == [("remoteA", name)]
+
+
 # ---- classify_jobs ----
 
 
