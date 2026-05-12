@@ -4,8 +4,8 @@ import logging
 from pathlib import Path
 from unittest.mock import MagicMock
 
+from atomx_toolkit.notify.dedup import DedupState
 from atomx_toolkit.notify.handler import ToolkitErrorHandler
-from atomx_toolkit.notify.send import DedupState
 
 
 def test_handler_dispatches_on_warning(tmp_path: Path) -> None:
