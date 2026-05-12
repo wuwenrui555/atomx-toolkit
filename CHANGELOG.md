@@ -4,6 +4,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-05-12
+
+### Added
+
+- Runtime dependency on
+  [`jianglab-name-standard`](https://github.com/wuwenrui555/jianglab-name-standard)
+  `@v0.1.1` for the lab-wide CosMx naming standard.
+- `parse_jobs_tsv` and the `transfer run` CLI now validate the
+  `name_local` column against `jianglab_name_standard.CosmxRunName`:
+  5 underscore-separated fields, real calendar date, and an
+  `atomx_version` of the form `v<major>-<minor>-<patch>`. Invalid
+  names are rejected before any disk write or SFTP connection, with
+  a message that includes the failing rule ID and the jianglab hint.
+
+### Changed
+
+- `name_local` values that previously parsed without complaint but
+  did not match `CosmxRunName` are now rejected. `name_remote` is
+  unchanged (still free-form, since AtoMx-side names are out of our
+  control).
+
+### Migration notes
+
+- Existing operators with a `jobs.tsv` written against v0.2.0 should
+  preview their file with `atomx-toolkit transfer plan <path>`:
+  validation errors surface in the plan dry-run with no transfer
+  attempted. Rewrite any rejected `name_local` to the 5-field form,
+  for example `20260211_WW_ACLF_run1_v2-2-1`. The AtoMx-generated
+  folder name is already in this shape, so the simplest fix is
+  "use the AtoMx folder name verbatim as `name_local`."
+
 ## [0.2.0] - 2026-05-12
 
 ### Added
