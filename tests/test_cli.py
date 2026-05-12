@@ -38,9 +38,35 @@ def test_transfer_help() -> None:
 
 def test_transfer_run_requires_config() -> None:
     # No config file present in default location should yield exit 2
-    result = _run("transfer", "run", "remote", "local", "--config", "/nonexistent/c.toml")
+    result = _run(
+        "transfer",
+        "run",
+        "remote",
+        "20260101_T_D_sA_v1-0-0",
+        "--config",
+        "/nonexistent/c.toml",
+    )
     assert result.returncode == 2
     assert "config" in (result.stdout + result.stderr).lower()
+
+
+def test_transfer_run_rejects_invalid_name_local() -> None:
+    """transfer run with a non-CosmxRunName name_local must exit 2 with [R1]
+    in the rendered error, BEFORE any config / SFTP / md5sum check."""
+    result = _run(
+        "transfer",
+        "run",
+        "remote",
+        "bad_name",
+        "--config",
+        "/nonexistent/c.toml",
+    )
+    assert result.returncode == 2
+    combined = (result.stdout + result.stderr).lower()
+    assert "[r1]" in combined
+    assert "hint:" in combined
+    # Validation must precede the config check.
+    assert "config" not in combined
 
 
 def test_transfer_batch_help() -> None:
