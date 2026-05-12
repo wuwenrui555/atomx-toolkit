@@ -9,6 +9,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Literal
 
+from jianglab_name_standard import CosmxRunName, NameValidationError
+
 from atomx_toolkit.transfer.errors import JobsTsvError, LockHeldError
 from atomx_toolkit.transfer.lock import LOCK_FILENAME, read_lock
 from atomx_toolkit.transfer.pipeline import run_pipeline
@@ -78,6 +80,13 @@ def parse_jobs_tsv(path: Path) -> list[Job]:
         remote, local = fields[0], fields[1]
         if local in seen_locals:
             raise JobsTsvError(f"{path} line {lineno}: duplicate name_local {local!r}")
+        try:
+            CosmxRunName(local)
+        except NameValidationError as exc:
+            raise JobsTsvError(
+                f"{path} line {lineno}: invalid name_local {local!r}: "
+                f"[{exc.rule_id}] {exc.message} | hint: {exc.hint}"
+            ) from exc
         seen_locals.add(local)
         jobs.append((remote, local))
     if not jobs:

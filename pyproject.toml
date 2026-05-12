@@ -1,6 +1,6 @@
 [project]
 name = "atomx-toolkit"
-version = "0.2.0"
+version = "0.3.0"
 description = "AtoMx SFTP transfer with double-download integrity check and email reporting."
 readme = "README.md"
 authors = [{ name = "wuwenrui555", email = "wuwenruiwwr@outlook.com" }]
@@ -11,6 +11,7 @@ dependencies = [
     "typer>=0.12",
     "rich>=15.0.0",
     "pingme @ git+https://github.com/wuwenrui555/pingme.git@v0.1.2",
+    "jianglab-name-standard @ git+https://github.com/wuwenrui555/jianglab-name-standard.git@v0.1.1",
 ]
 
 [project.scripts]

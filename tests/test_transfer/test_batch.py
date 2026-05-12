@@ -26,33 +26,42 @@ def _write(p: Path, content: str) -> Path:
     return p
 
 
+def _local(suffix: str) -> str:
+    """Return a CosmxRunName-conformant name_local for tests. Stable date/user."""
+    return f"20260101_T_D_s{suffix}_v1-0-0"
+
+
 # ---- parse_jobs_tsv ----
 
 
 def test_parse_simple(tmp_path: Path) -> None:
-    p = _write(tmp_path / "j.tsv", "remoteA\tlocalA\nremoteB\tlocalB\n")
+    p = _write(tmp_path / "j.tsv", f"remoteA\t{_local('A')}\nremoteB\t{_local('B')}\n")
     jobs = parse_jobs_tsv(p)
-    assert jobs == [("remoteA", "localA"), ("remoteB", "localB")]
+    assert jobs == [("remoteA", _local("A")), ("remoteB", _local("B"))]
 
 
 def test_parse_skips_comments_and_blanks(tmp_path: Path) -> None:
     p = _write(
         tmp_path / "j.tsv",
-        "# header\n\nremoteA\tlocalA\n  # indented comment\nremoteB\tlocalB\n",
+        f"# header\n\nremoteA\t{_local('A')}\n  # indented comment\nremoteB\t{_local('B')}\n",
     )
     jobs = parse_jobs_tsv(p)
-    assert jobs == [("remoteA", "localA"), ("remoteB", "localB")]
+    assert jobs == [("remoteA", _local("A")), ("remoteB", _local("B"))]
 
 
 def test_parse_tolerates_bom(tmp_path: Path) -> None:
     p = tmp_path / "j.tsv"
-    p.write_bytes(b"\xef\xbb\xbfremoteA\tlocalA\n")
-    assert parse_jobs_tsv(p) == [("remoteA", "localA")]
+    name = _local("A")
+    p.write_bytes(b"\xef\xbb\xbfremoteA\t" + name.encode("utf-8") + b"\n")
+    assert parse_jobs_tsv(p) == [("remoteA", name)]
 
 
 def test_parse_accepts_arbitrary_whitespace(tmp_path: Path) -> None:
-    p = _write(tmp_path / "j.tsv", "remoteA    localA\nremoteB\t\tlocalB\n")
-    assert parse_jobs_tsv(p) == [("remoteA", "localA"), ("remoteB", "localB")]
+    p = _write(
+        tmp_path / "j.tsv",
+        f"remoteA    {_local('A')}\nremoteB\t\t{_local('B')}\n",
+    )
+    assert parse_jobs_tsv(p) == [("remoteA", _local("A")), ("remoteB", _local("B"))]
 
 
 def test_parse_empty_after_filter_raises(tmp_path: Path) -> None:
@@ -74,9 +83,40 @@ def test_parse_three_fields_raises(tmp_path: Path) -> None:
 
 
 def test_parse_duplicate_local_raises(tmp_path: Path) -> None:
-    p = _write(tmp_path / "j.tsv", "r1\tlocal\nr2\tlocal\n")
+    p = _write(tmp_path / "j.tsv", f"r1\t{_local('Dup')}\nr2\t{_local('Dup')}\n")
     with pytest.raises(JobsTsvError, match="duplicate"):
         parse_jobs_tsv(p)
+
+
+def test_parse_rejects_invalid_name_local(tmp_path: Path) -> None:
+    """name_local that does not match CosmxRunName raises JobsTsvError with
+    line number, the bad name, the rule_id, and the jianglab hint."""
+    p = _write(tmp_path / "j.tsv", "remoteA\tbad_name\n")
+    with pytest.raises(JobsTsvError) as excinfo:
+        parse_jobs_tsv(p)
+    msg = str(excinfo.value)
+    assert "line 1" in msg
+    assert "bad_name" in msg
+    assert "[R1]" in msg
+    assert "hint:" in msg
+
+
+def test_parse_duplicate_check_runs_before_validation(tmp_path: Path) -> None:
+    """When a TSV has both a duplicate name_local AND an invalid one further
+    down, the duplicate error wins (because the duplicate check runs first)."""
+    p = _write(
+        tmp_path / "j.tsv",
+        f"r1\t{_local('A')}\nr2\t{_local('A')}\nr3\tbad_name\n",
+    )
+    with pytest.raises(JobsTsvError, match="duplicate"):
+        parse_jobs_tsv(p)
+
+
+def test_parse_valid_cosmx_name_local_passes(tmp_path: Path) -> None:
+    """A canonical 5-field CosmxRunName parses fine."""
+    name = "20260211_WW_ACLF_run1_v2-2-1"
+    p = _write(tmp_path / "j.tsv", f"remoteA\t{name}\n")
+    assert parse_jobs_tsv(p) == [("remoteA", name)]
 
 
 # ---- classify_jobs ----

@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Annotated, Any, cast
 
 import typer
+from jianglab_name_standard import CosmxRunName, NameValidationError
 from rich.console import Console
 
 from atomx_toolkit._logging import batch_log_path, setup_logging
@@ -71,6 +72,13 @@ def run_cmd(
     config: Annotated[Path | None, typer.Option("--config", help="config.toml path")] = None,
 ) -> None:
     """Download a single study, with double-MD5 verification."""
+    try:
+        CosmxRunName(name_local)
+    except NameValidationError as exc:
+        raise typer.BadParameter(
+            f"[{exc.rule_id}] {exc.message}\nhint: {exc.hint}",
+            param_hint="'NAME_LOCAL'",
+        ) from exc
     cfg_path = config or _default_config_path()
     smtp_env_path = _default_smtp_env_path()
     try:
