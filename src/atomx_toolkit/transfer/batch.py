@@ -43,6 +43,11 @@ class BatchItemResult:
     status: BatchItemStatus
     duration: timedelta | None = None
     failure_message: str | None = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    file_count: int | None = None
+    total_bytes: int | None = None
+    failure_phase: str | None = None
 
 
 @dataclass(frozen=True)
@@ -134,6 +139,12 @@ def run_batch(
     pending items are appended as 'failed' with reason 'not run, batch aborted'.
     Per-item exceptions are caught and recorded; the next item still runs.
     """
+    logger.info(
+        "batch started: %d pending, %d complete_already, %d skipped_locked",
+        len(plan.pending),
+        len(plan.complete_already),
+        len(plan.skipped_locked),
+    )
     started_at = datetime.now(UTC)
     items: list[BatchItemResult] = []
     for job in plan.complete_already:
@@ -161,6 +172,7 @@ def run_batch(
                 )
             )
             continue
+        logger.info("starting study %d/%d: %s", idx + 1, len(plan.pending), job[1])
         item_start = datetime.now(UTC)
         try:
             result = run_pipeline(
@@ -174,12 +186,17 @@ def run_batch(
                 log_root=log_root,
                 backup_root=backup_root,
             )
+            item_end = datetime.now(UTC)
             items.append(
                 BatchItemResult(
                     name_remote=job[0],
                     name_local=job[1],
                     status="succeeded" if result.status == "success" else "complete_already",
-                    duration=datetime.now(UTC) - item_start,
+                    duration=item_end - item_start,
+                    started_at=item_start,
+                    completed_at=item_end,
+                    file_count=result.file_count,
+                    total_bytes=result.total_bytes,
                 )
             )
         except LockHeldError as exc:
@@ -192,13 +209,17 @@ def run_batch(
                 )
             )
         except KeyboardInterrupt:
+            item_end = datetime.now(UTC)
             items.append(
                 BatchItemResult(
                     name_remote=job[0],
                     name_local=job[1],
                     status="failed",
                     failure_message="interrupted",
-                    duration=datetime.now(UTC) - item_start,
+                    duration=item_end - item_start,
+                    started_at=item_start,
+                    completed_at=item_end,
+                    failure_phase="interrupted",
                 )
             )
             aborted = True
@@ -208,16 +229,27 @@ def run_batch(
             )
         except Exception as exc:
             logger.exception("study %s failed", job[1])
+            item_end = datetime.now(UTC)
             items.append(
                 BatchItemResult(
                     name_remote=job[0],
                     name_local=job[1],
                     status="failed",
                     failure_message=str(exc),
-                    duration=datetime.now(UTC) - item_start,
+                    duration=item_end - item_start,
+                    started_at=item_start,
+                    completed_at=item_end,
+                    failure_phase=type(exc).__name__,
                 )
             )
     completed_at = datetime.now(UTC)
+    logger.info(
+        "batch finished: %d succeeded, %d failed, %d complete_already, %d skipped_locked",
+        sum(1 for i in items if i.status == "succeeded"),
+        sum(1 for i in items if i.status == "failed"),
+        sum(1 for i in items if i.status == "complete_already"),
+        sum(1 for i in items if i.status == "skipped_locked"),
+    )
     return BatchRunResult(
         jobs_tsv=jobs_tsv_path,
         started_at=started_at,

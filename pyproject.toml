@@ -1,6 +1,6 @@
 [project]
 name = "atomx-toolkit"
-version = "0.3.0"
+version = "0.3.1"
 description = "AtoMx SFTP transfer with double-download integrity check and email reporting."
 readme = "README.md"
 authors = [{ name = "wuwenrui555", email = "wuwenruiwwr@outlook.com" }]

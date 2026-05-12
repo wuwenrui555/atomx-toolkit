@@ -4,6 +4,50 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2026-05-12
+
+### Added
+
+- Phase-level INFO logging in `run_pipeline` so operators can `tail -f`
+  the batch log and watch progress through the 6 transfer phases.
+- Per-N-files progress logging in `_download_all` (`PROGRESS_INTERVAL=10`,
+  module-level constant): emits a `[<completed>/<total>] progress in <dir>`
+  INFO line every 10 files and at the final file.
+- Batch boundary INFO logs (`batch started`, `starting study K/N`,
+  `batch finished`) in `run_batch`.
+- Per-study `transfer_report` email dispatched in `transfer batch`
+  for every `succeeded` or `failed` item, mirroring the single-study
+  CLI behavior. Operators running a multi-study batch now receive
+  N+1 emails (one per study + one final batch summary) instead of
+  only the final summary.
+
+### Changed
+
+- `BatchItemResult` (in `atomx_toolkit.transfer.batch`) gains 5 new
+  optional fields: `started_at`, `completed_at`, `file_count`,
+  `total_bytes`, `failure_phase`. All default to `None` and are
+  populated by `run_batch` on the relevant code paths
+  (success / KeyboardInterrupt / generic Exception). `LockHeldError`
+  and the post-abort tail leave them `None` because those items
+  never actually ran a pipeline.
+
+### Fixed
+
+- v0.3.0 produced an empty batch log file even after hours of real
+  download work, because `run_pipeline` and `run_batch` emitted no
+  INFO-level log records on the happy path. The new phase and
+  progress INFO logs fix that.
+- v0.3.0 sent only one email at the very end of a batch run,
+  delaying operator feedback by hours. The new per-study
+  `transfer_report` dispatch in `batch_cmd` restores per-study
+  email visibility.
+
+### Notes
+
+- No CLI surface change.
+- No new runtime dependency.
+- Existing v0.3.0 installs work unchanged; this is a drop-in upgrade.
+
 ## [0.3.0] - 2026-05-12
 
 ### Added
